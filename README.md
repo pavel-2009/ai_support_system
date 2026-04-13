@@ -1,6 +1,11 @@
+<aside>
+<img src="i" alt="i" width="40px" />
+
 **Техническое задание**
 
 AI Support System (аналог Intercom / Zendesk) • Версия 1.0
+
+</aside>
 
 - Тип проекта: Backend-сервис
 - Сложность: Middle+ / Senior
@@ -417,3 +422,18 @@ Authorization: Bearer <operator_token>
 ```
 
 Ответ:
+
+```json
+{
+  "queue": [
+    {
+      "conversation_id": "conv-789",
+      "user_email": "user@example.com",
+      "priority": "high",
+      "created_at": "2024-01-01T10:00:00Z",
+      "last_message": "Всё сломалось!",
+      "ai_confidence": 0.32
+    }
+  ]
+}
+```
