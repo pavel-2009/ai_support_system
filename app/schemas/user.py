@@ -49,3 +49,10 @@ class UserUpdate(BaseModel):
 
     nickname: str | None = None
     full_name: str | None = None
+    
+    
+class UserLogin(BaseModel):
+    """Модель для аутентификации пользователя."""
+
+    email: EmailStr
+    password: str

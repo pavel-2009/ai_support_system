@@ -12,11 +12,14 @@ app = FastAPI(
     docs_url=settings.DOCS_URL,
     redoc_url=settings.REDOC_URL,
     openapi_url=settings.OPENAPI_URL,
+    root_path=settings.API_PREFIX,
 )
 
 
 # Регистрируем маршруты и обработчики здесь
-pass
+from app.routers import user
+
+app.include_router(user.router)
 
 
 # Базовый маршрут для проверки работоспособности

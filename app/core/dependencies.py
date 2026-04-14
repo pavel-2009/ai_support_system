@@ -10,9 +10,9 @@ from app.models.user import User
 
 
 # === Зависимость для получения текущего пользователя ===
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 
-oauth = OAuth2PasswordRequestForm(tokenUrl="login")
+oauth = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 async def get_current_user(

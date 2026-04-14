@@ -82,15 +82,18 @@ def create_tokens(data: dict) -> Token:
     
     
 def update_access_token_with_refresh_token(refresh_token: str) -> str | None:
-    """Обновление JWT токена доступа с помощью токена обновления."""
-    payload = verify_refresh_token(refresh_token)
+    """Обновление access токена с помощью refresh токена."""
     
+    payload = verify_refresh_token(refresh_token)
     if payload is None:
         return None
     
-    new_access_token = create_access_token(data=payload)
+    # Оставляем ТОЛЬКО полезные данные пользователя, удаляя ВСЕ системные поля JWT
+    # Обычно это 'sub' (subject) или ваш 'user_id'
+    user_data = {key: value for key, value in payload.items() 
+                 if key not in ("exp", "iat", "nbf", "jti")}
     
-    return new_access_token
+    return create_access_token(data=user_data)
 
 
 # === ПАРОЛИ ===

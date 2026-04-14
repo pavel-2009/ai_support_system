@@ -137,9 +137,10 @@ async def create_test_user(async_session):
         ).returning(User)
         
         result = await async_session.execute(stmt)
-        await async_session.commit()
         
         user = result.scalar_one()
+        await async_session.commit()
+        
         created_users.append(user.id)
         
         return user

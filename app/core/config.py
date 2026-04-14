@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     DOCS_URL: str = "/docs"
     REDOC_URL: str = "/redoc"
     OPENAPI_URL: str = "/openapi.json"
-
+    API_PREFIX: str = "/api"
+    
     # === Database ===
     DATABASE_URL: str
 

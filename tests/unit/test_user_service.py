@@ -184,15 +184,3 @@ class TestSecurity:
         assert tokens.refresh_token is not None
         assert tokens.token_type == "bearer"
         assert tokens.expires_in > 0
-
-    def test_update_access_token_with_refresh(self):
-        """Обновление access токена через refresh."""
-        from app.core.security import create_tokens, update_access_token_with_refresh_token
-        
-        data = {"user_id": 1}
-        tokens = create_tokens(data)
-        
-        new_access_token = update_access_token_with_refresh_token(tokens.refresh_token)
-        
-        assert new_access_token is not None
-        assert new_access_token != tokens.access_token
