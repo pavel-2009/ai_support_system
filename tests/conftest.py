@@ -18,7 +18,13 @@ if "email_validator" not in sys.modules:
         pass
 
     def validate_email(email, check_deliverability=False):
-        return types.SimpleNamespace(email=email)
+        # Возвращаем объект со всеми атрибутами для совместимости с pydantic v2
+        result = types.SimpleNamespace()
+        result.email = email
+        result.normalized = email
+        result.local_part = email.split("@")[0] if "@" in email else email
+        result.domain = email.split("@")[1] if "@" in email else ""
+        return result
 
     email_validator.EmailNotValidError = EmailNotValidError
     email_validator.validate_email = validate_email
