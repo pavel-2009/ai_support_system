@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 
 from app.core.config import settings
-from app.routers.user import auth_router, users_router
+from app.routers.user import admin_router, auth_router, users_router
 
 
 app = FastAPI(
@@ -18,6 +18,7 @@ app = FastAPI(
 
 app.include_router(users_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.get("/health", tags=["Health"], summary="Проверка работоспособности API")
