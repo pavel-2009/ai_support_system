@@ -90,7 +90,7 @@ def admin_client(client, create_test_user):
         role=UserRole.ADMIN
     )
     
-    tokens = create_tokens({"user_id": admin.id})
+    tokens = create_tokens({"user_id": admin.id, "email": admin.email, "role": admin.role.value})
     client.headers["Authorization"] = f"Bearer {tokens.access_token}"
     
     return client
@@ -107,7 +107,7 @@ def operator_client(client, create_test_user):
         role=UserRole.OPERATOR
     )
     
-    tokens = create_tokens({"user_id": operator.id})
+    tokens = create_tokens({"user_id": operator.id, "email": operator.email, "role": operator.role.value})
     client.headers["Authorization"] = f"Bearer {tokens.access_token}"
     
     return client
@@ -157,51 +157,6 @@ def create_test_user(async_session):
 
     yield _create_user
     loop.close()
-
-
-@pytest.fixture
-async def create_test_conversation(async_session, create_test_user):
-    """Фикстура для создания тестовых диалогов."""
-    created_conversations = []
-    
-    async def _create_conversation(
-        user_id: int = None,
-        status: str = "open",
-        priority: str = "medium",
-        channel: str = "web"
-    ):
-        from app.models.conversation import Conversation
-        
-        if user_id is None:
-            user = create_test_user(email=f"conv-{len(created_conversations)}@example.com")
-            user_id = user.id
-        
-        conversation = Conversation(
-            user_id=user_id,
-            status=status,
-            priority=priority,
-            channel=channel
-        )
-        
-        async_session.add(conversation)
-        await async_session.commit()
-        await async_session.refresh(conversation)
-        
-        created_conversations.append(conversation.id)
-        
-        return conversation
-    
-    yield _create_conversation
-    
-    # Cleanup
-    for conv_id in created_conversations:
-        try:
-            from sqlalchemy import delete
-            from app.models.conversation import Conversation
-            await async_session.execute(delete(Conversation).where(Conversation.id == conv_id))
-            await async_session.commit()
-        except Exception:
-            await async_session.rollback()
 
 
 # === PYTEST CONFIGURATION ===
