@@ -30,7 +30,7 @@ class UserRepository:
         user = User(
             email=data.email,
             nickname=data.nickname,
-            fullname=data.full_name,
+            fullname=data.full_name or data.nickname,
             hashed_password=hashed_password,
         )
         session.add(user)
@@ -77,10 +77,9 @@ class UserRepository:
 
     @staticmethod
     async def get_user_by_email(session: AsyncSession, email: str) -> User:
-        user = await UserRepository.get_by_email(session, email)
-        if user is None:
+        if not await UserRepository.user_exists(session, email=email):
             raise ValueError("Пользователь с таким email не найден.")
-        return user
+        return await UserRepository.get_by_email(session, email)
 
     @staticmethod
     async def get_user_by_id(session: AsyncSession, user_id: int) -> User:

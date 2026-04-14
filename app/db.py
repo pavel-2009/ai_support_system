@@ -1,18 +1,16 @@
 """Соединение с базой данных."""
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 from typing import AsyncGenerator
+from app.core.config import settings
 
 # Создаем асинхронный движок для подключения к базе данных SQLite
 Base = declarative_base()
 
 # Инициализация базы данных
-engine = create_async_engine(
-    "sqlite+aiosqlite:///./app.db",
-)
+engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
 
 # Создаем асинхронную сессию для работы с базой данных
 async_session = sessionmaker(

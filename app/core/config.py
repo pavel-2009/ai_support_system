@@ -1,13 +1,11 @@
 """Базовая конфигурация приложения."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Конфигурация приложения."""
-    
-    _env_file = ".env"
-    _env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     
     # === Application ===
     APP_NAME: str = "My FastAPI Application"
@@ -19,17 +17,12 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     
     # === Database ===
-    DATABASE_URL: str
+    DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
 
     # === JWT ===
-    JWT_SECRET_KEY: str
+    JWT_SECRET_KEY: str = "change-me-to-a-long-random-secret-key-with-at-least-32-bytes"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        
 
 settings = Settings()

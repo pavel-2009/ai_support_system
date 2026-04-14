@@ -1,9 +1,11 @@
 """Роутеры пользователей и аутентификации."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.security import create_tokens, verify_refresh_token
 from app.db import get_async_session
 from app.models.user import User
 from app.schemas.token import Token
@@ -12,6 +14,15 @@ from app.services.user_service import UserService
 
 users_router = APIRouter(prefix="/users", tags=["users"])
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+def _http_error(code: int, exc: ValueError) -> HTTPException:
+    return HTTPException(status_code=code, detail=str(exc))
 
 
 @users_router.get("/", response_model=list[UserGet], summary="Получить список пользователей")
@@ -42,7 +53,7 @@ async def get_user_by_id(
     try:
         return await UserService.get_user_by_id(session, user_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_404_NOT_FOUND, exc) from exc
 
 
 @users_router.post("/", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Создать пользователя")
@@ -51,10 +62,12 @@ async def create_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    if current_user.role.value != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
     try:
         return await UserService.create_user_by_admin(session, data, current_user)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
 @users_router.patch("/{user_id}", response_model=UserGet, summary="Обновить пользователя")
@@ -67,7 +80,16 @@ async def update_user(
     try:
         return await UserService.update_user(session, user_id, data, current_user)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
+
+
+@users_router.patch("/me", response_model=UserGet, summary="Обновить текущего пользователя")
+async def update_me(
+    data: UserUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+) -> UserGet:
+    return await update_user(current_user.id, data, session, current_user)
 
 
 @users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить пользователя")
@@ -79,7 +101,7 @@ async def delete_user(
     try:
         await UserService.delete_user(session, user_id, current_user)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
 @auth_router.post("/register", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Регистрация")
@@ -90,7 +112,7 @@ async def register_user(
     try:
         return await UserService.register_user(session, data)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
 @auth_router.post("/login", response_model=Token, summary="Логин")
@@ -101,9 +123,37 @@ async def login_user(
     try:
         return await UserService.login_user(session, data)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        raise _http_error(status.HTTP_401_UNAUTHORIZED, exc) from exc
 
 
 @auth_router.post("/refresh", response_model=Token, summary="Обновить токен")
-async def refresh_token(current_user: User = Depends(get_current_user)) -> Token:
-    return await UserService.refresh_token(current_user)
+async def refresh_token(
+    data: RefreshTokenRequest,
+) -> Token:
+    payload = verify_refresh_token(data.refresh_token)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный refresh токен.")
+    user_data = {k: v for k, v in payload.items() if k not in {"exp", "iat", "nbf", "jti"}}
+    return create_tokens(user_data)
+
+
+@auth_router.post("/logout", summary="Выход")
+async def logout_user() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@admin_router.get("/users", response_model=list[UserGet], summary="Админ: список пользователей")
+async def admin_get_all_users(
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+) -> list[UserGet]:
+    return await get_all_users(session, current_user)
+
+
+@admin_router.post("/users", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Админ: создать пользователя")
+async def admin_create_user(
+    data: UserCreate,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+) -> UserGet:
+    return await create_user(data, session, current_user)

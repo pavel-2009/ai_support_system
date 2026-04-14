@@ -2,6 +2,7 @@
 
 from jwt import encode, decode, PyJWTError
 import bcrypt
+from uuid import uuid4
 
 from datetime import datetime, timedelta
 
@@ -20,9 +21,10 @@ def create_access_token(
 ) -> str:
     """Создание JWT токена с данными и временем истечения."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    now = datetime.utcnow()
+    expire = now + expires_delta
     
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": now, "jti": str(uuid4())})
     
     token = encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
@@ -45,9 +47,10 @@ def verify_access_token(token: str) -> dict | None:
 def create_refresh_token(data: dict) -> str:
     """Создание JWT токена для обновления с данными."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+    now = datetime.utcnow()
+    expire = now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": now, "jti": str(uuid4())})
     
     token = encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
