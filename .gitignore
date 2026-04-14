@@ -1,36 +1,42 @@
 ```
-# Test and coverage reports
-.coverage
-htmlcov/
-coverage/
-.pytest_cache/
-
-# Virtual environments
-.venv/
-venv/
-.env
-.env.local
-*.env.*
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# Python specific
+# Test and cache directories
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.mypy_cache/
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # Logs
 *.log
 
-# Build and distribution
+# Build artifacts
 dist/
 build/
+target/
 *.egg-info/
+
+# Temporary files
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Coverage and testing
+.mypy_cache/
+.hypothesis/
 ```
