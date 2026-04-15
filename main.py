@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.routers.user import admin_router, auth_router, users_router
 
 
 app = FastAPI(
@@ -15,26 +16,17 @@ app = FastAPI(
     root_path=settings.API_PREFIX,
 )
 
-
-# Регистрируем маршруты и обработчики здесь
-from app.routers import user
-
-app.include_router(user.router)
+app.include_router(users_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
 
 
-# Базовый маршрут для проверки работоспособности
 @app.get("/health", tags=["Health"], summary="Проверка работоспособности API")
 def health_check():
     return {"status": "healthy"}
 
 
-# Запуск приложения
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        app,
-        host="localhost",
-        port=8000,
-        log_level="info",
-    )
+    uvicorn.run(app, host="localhost", port=8000, log_level="info")
