@@ -33,7 +33,7 @@ async def get_all_users(
     if current_user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
 
-    return await UserService.get_all_users(session)
+    return await UserService(session).get_all_users()
 
 
 @users_router.get("/me", response_model=UserGet, summary="Текущий пользователь")
@@ -51,7 +51,7 @@ async def get_user_by_id(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
 
     try:
-        return await UserService.get_user_by_id(session, user_id)
+        return await UserService(session).get_user_by_id(user_id)
     except ValueError as exc:
         raise _http_error(status.HTTP_404_NOT_FOUND, exc) from exc
 
@@ -65,7 +65,7 @@ async def create_user(
     if current_user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
     try:
-        return await UserService.create_user_by_admin(session, data, current_user)
+        return await UserService(session).create_user_by_admin(data, current_user)
     except ValueError as exc:
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
@@ -78,7 +78,7 @@ async def update_user(
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
     try:
-        return await UserService.update_user(session, user_id, data, current_user)
+        return await UserService(session).update_user(user_id, data, current_user)
     except ValueError as exc:
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
@@ -99,7 +99,7 @@ async def delete_user(
     current_user: User = Depends(get_current_user),
 ) -> None:
     try:
-        await UserService.delete_user(session, user_id, current_user)
+        await UserService(session).delete_user(user_id, current_user)
     except ValueError as exc:
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
@@ -110,7 +110,7 @@ async def register_user(
     session: AsyncSession = Depends(get_async_session),
 ) -> UserGet:
     try:
-        return await UserService.register_user(session, data)
+        return await UserService(session).register_user(data)
     except ValueError as exc:
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
@@ -121,7 +121,7 @@ async def login_user(
     session: AsyncSession = Depends(get_async_session),
 ) -> Token:
     try:
-        return await UserService.login_user(session, data)
+        return await UserService(session).login_user(data)
     except ValueError as exc:
         raise _http_error(status.HTTP_401_UNAUTHORIZED, exc) from exc
 
