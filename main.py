@@ -15,8 +15,9 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Инициализация сервисов
-    async with get_async_session() as session:
+    async for session in get_async_session():
         await init_services(session)
+        break
     
     yield
 
