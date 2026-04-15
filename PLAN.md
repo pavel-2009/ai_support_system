@@ -1,21 +1,21 @@
-# PLAN — AI Support System (актуализация на 14 апреля 2026)
+# PLAN — AI Support System (актуализация на 15 апреля 2026)
 
 ## 1) Текущий статус проекта
 
-Проект находится на этапе **базового user/auth ядра**:
+Проект находится на этапе **user/auth + базовый контур conversations**:
 
-- Реализован FastAPI-приложение и базовая структура слоев (`routers/services/repositories/models/schemas`).
-- Реализованы `users` + миграция Alembic только для таблицы пользователей.
+- Реализована FastAPI-архитектура по слоям (`routers/services/repositories/models/schemas`).
+- Реализованы `users` и `conversations` (модели, репозитории, сервисы, роутеры).
 - Реализованы auth-flow: `register`, `login`, `refresh`, `logout`.
-- Реализованы RBAC-ограничения для admin/user в рамках пользовательских endpoint.
-- Есть health-check endpoint и набор unit/e2e тестов, которые проходят.
+- Реализованы RBAC-проверки для user/admin в user- и conversation-endpoint.
+- Набор unit/e2e тестов расширен: покрыты ключевые позитивные и негативные сценарии сервисов и роутеров.
 
 ### Процент готовности
 
-- **Оценка выполненной работы: ~25%**.
-- **Оставшийся объем: ~75%**.
+- **Оценка выполненной работы: ~35%**.
+- **Оставшийся объем: ~65%**.
 
-> Почему 25%: закрыт фундамент (аутентификация/пользователи/каркас), но отсутствуют ключевые бизнес-фичи ТЗ — conversations/messages, AI-routing, escalation queue, operator API, audit/metrics/readiness.
+> Почему 35%: кроме user/auth фундамента закрыт минимальный workflow диалогов (`create/get` + доступ), но всё ещё отсутствует основной MVP-функционал: сообщения, операторский цикл, AI-routing, аудит и метрики.
 
 ---
 
@@ -27,20 +27,28 @@
 - [x] Базовая конфигурация через settings.
 
 ### 2.2 Данные
-- [x] Модель `users`.
-- [x] Первая миграция Alembic для `users`.
-- [ ] `conversations`, `messages`, `audit_logs` — не реализованы.
+- [x] Модель `users` + миграции.
+- [x] Модель `conversations` + базовые enum-поля (status/priority/channel).
+- [ ] `messages`, `audit_logs` — не реализованы.
 
 ### 2.3 Auth и доступ
 - [x] Регистрация.
 - [x] JWT access/refresh.
 - [x] Логин + refresh endpoint.
-- [x] Базовый RBAC для admin/user.
-- [~] Не завершено в полном объеме ТЗ (нет привязки прав к диалогам/операторским объектам).
+- [x] RBAC для admin/user.
+- [~] Частично: права для operator-сценариев и продвинутая изоляция по workflow не завершены.
 
-### 2.4 Качество
-- [x] Набор unit/e2e тестов для user/auth части.
-- [x] Тесты стабильны локально (pytest green).
+### 2.4 API поддержки
+- [x] `POST /api/conversations/`.
+- [x] `GET /api/conversations/{id}`.
+- [ ] Список диалогов пользователя.
+- [ ] Работа с сообщениями (`list/create`).
+- [ ] Close/reopen/status transition API.
+
+### 2.5 Качество
+- [x] Unit/e2e тесты для user/auth.
+- [x] Дополнительные unit/e2e тесты для сервисов и роутеров users/conversations.
+- [x] Текущий ориентир покрытия: **~91%** по `app/main` (по локальному запуску `pytest --cov`).
 
 ---
 
@@ -49,8 +57,8 @@
 Критичные незакрытые зоны:
 
 1. **Домен поддержки**
-   - Нет сущностей диалогов и сообщений.
-   - Нет state machine статусов диалога.
+   - Нет сущности сообщений в диалогах.
+   - Нет аудита действий (кто/когда сменил статус, назначил оператора и т.д.).
 
 2. **AI processing**
    - Нет LLM adapter и pipeline обработки.
@@ -59,53 +67,51 @@
 
 3. **Operator workflow**
    - Нет очереди эскалаций.
-   - Нет `assign/reply/close/back_to_ai`.
+   - Нет `assign/reply/close/back_to_ai` API.
    - Нет лимита активных диалогов на оператора.
 
 4. **Observability / эксплуатация**
-   - Нет audit log смен статусов.
+   - Нет audit log.
    - Нет метрик Prometheus.
    - Нет readiness endpoint и расширенной диагностики.
 
 5. **Документация и demo readiness**
-   - README пока отражает ТЗ, но не полноценный runbook MVP.
-   - Нет seed-сценариев для operator/admin демонстрации в полном домене.
+   - README пока отражает базовый run/setup, но не full MVP runbook.
+   - Нет seed/demo-сценариев полного цикла user→AI→operator.
 
 ---
 
 ## 4) Обновленный план до MVP Portfolio Ready
 
-## Этап A — Домен поддержки (2–3 дня)
+## Этап A — Messages + audit data model (2–3 дня)
 - Добавить модели/миграции:
-  - `conversations`
   - `messages`
   - `audit_logs`
-- Ввести enums: статусы, приоритет, канал, sender_type.
-- Добавить репозитории и базовые схемы.
+- Связать `messages` с `conversations/users`.
+- Добавить репозитории и схемы.
 
-**Результат:** можно хранить и читать диалоги/сообщения.
+**Результат:** можно хранить историю переписки и событий.
 
-## Этап B — User Conversation API (2 дня)
-- `POST /conversations`
-- `GET /conversations`
+## Этап B — User Conversation API completion (2 дня)
+- `GET /conversations` (фильтры, пагинация)
 - `GET /conversations/{id}/messages`
 - `POST /conversations/{id}/messages`
 - `POST /conversations/{id}/close`
-- Проверка изоляции: пользователь видит только свои диалоги.
+- Проверка изоляции и прав.
 
-**Результат:** закрыт пользовательский контур поддержки.
+**Результат:** завершён пользовательский контур поддержки.
 
-## Этап C — State machine + audit (1–2 дня)
+## Этап C — State machine + audit writing (1–2 дня)
 - Формализовать допустимые переходы статусов.
-- Вынести правила в service-слой.
-- Записывать каждую смену статуса в `audit_logs`.
+- Вынести правила переходов в service-слой.
+- Писать каждую смену статуса в `audit_logs`.
 
 **Результат:** предсказуемая и проверяемая бизнес-логика.
 
 ## Этап D — AI adapter и routing (2–3 дня)
-- Реализовать интерфейс LLM adapter + OpenAI реализацию.
-- Добавить асинхронный pipeline (background worker/queue).
-- Реализовать confidence routing и fallback.
+- Интерфейс LLM adapter + OpenAI реализация.
+- Асинхронный pipeline (background worker/queue).
+- Confidence routing и fallback-эскалация.
 
 **Результат:** рабочая AI-маршрутизация + эскалация.
 
@@ -120,7 +126,7 @@
 **Результат:** полноценный операторский контур.
 
 ## Этап F — Observability + polishing (1–2 дня)
-- JSON logs для AI решений.
+- JSON logs для AI-решений.
 - Prometheus метрики (escalations, confidence avg, AI latency, queue size).
 - Health + readiness.
 - Обновление README (архитектура, запуск, примеры API).
@@ -133,33 +139,31 @@
 
 При текущем состоянии:
 
-- **Осталось: 9–14 рабочих дней** (full-time 6–8 ч/день).
-- **Оптимистично:** 9–10 дней (если без сложных инфраструктурных блокеров).
-- **Реалистично:** 11–14 дней (с учетом отладки AI-интеграции и стабилизации тестов).
+- **Осталось: 8–12 рабочих дней** (full-time 6–8 ч/день).
+- **Оптимистично:** 8–9 дней.
+- **Реалистично:** 10–12 дней.
 
 ---
 
 ## 6) Риски и приоритеты на ближайшие шаги
 
 ### Топ-риски
-- Непростая согласованность статусов при параллельных событиях (AI/оператор/user).
+- Несогласованность статусов при параллельных событиях (AI/оператор/user).
 - Нестабильность внешнего AI API.
-- Рост времени реализации из-за попытки “сделать сразу production”.
+- Перерасход времени из-за premature production-hardening.
 
 ### Приоритеты ближайшего спринта
-1. Сначала закрыть **данные + state machine**.
-2. Потом **user conversation API**.
-3. Только затем подключать **AI и operator queue**.
-
-Такой порядок минимизирует переделки и снижает риск регрессий.
+1. Сначала закрыть **messages + state machine + audit**.
+2. Затем закончить **user conversation API**.
+3. После — **AI routing**, и только затем **operator queue/API**.
 
 ---
 
 ## 7) Критерий завершения текущего этапа (checkpoint)
 
-Текущий этап (user/auth foundation) считается завершенным, когда:
-- все auth/user тесты зеленые;
-- миграции и модель `users` стабильны;
-- зафиксирован и согласован следующий backlog по conversations/AI/operator.
+Текущий этап (**user/auth + basic conversations**) считается завершённым, когда:
+- user/auth/conversation сервисы и роутеры покрыты тестами на базовые happy/error path;
+- текущий тестовый пакет стабилен локально;
+- зафиксирован следующий backlog на `messages/state machine/audit`.
 
-**Checkpoint status: достигнут. Следующий фокус — Этап A (домен поддержки).**
+**Checkpoint status: почти достигнут; следующий фокус — Этап A (messages + audit model).**
