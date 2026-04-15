@@ -11,76 +11,80 @@ from app.schemas.user import UserCreate, UserLogin, UserUpdate
 
 class UserService:
     """Бизнес-логика пользователей."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.user_repo = UserRepository(session)
 
-    @staticmethod
-    async def get_user_by_id(session: AsyncSession, user_id: int) -> User:
-        user = await UserRepository.get_by_id(session, user_id)
+
+    async def get_user_by_id(self, user_id: int) -> User:
+        user = await self.user_repo.get_by_id(user_id)
         if not user:
             raise ValueError("Пользователь с таким ID не найден.")
         return user
 
-    @staticmethod
-    async def get_user_by_email(session: AsyncSession, email: str) -> User:
-        user = await UserRepository.get_by_email(session, email)
+
+    async def get_user_by_email(self, email: str) -> User:
+        user = await self.user_repo.get_by_email(email)
         if not user:
             raise ValueError("Пользователь с таким email не найден.")
         return user
 
-    @staticmethod
-    async def get_all_users(session: AsyncSession) -> list[User]:
-        return await UserRepository.list_all(session)
 
-    @staticmethod
-    async def register_user(session: AsyncSession, data: UserCreate) -> User:
-        if await UserRepository.exists(session, email=data.email):
+    async def get_all_users(self) -> list[User]:
+        return await self.user_repo.list_all()
+
+
+    async def register_user(self, data: UserCreate) -> User:
+        if await self.user_repo.exists(email=data.email):
             raise ValueError("Пользователь с таким email уже существует.")
 
         hashed_password = hash_password(data.password)
-        return await UserRepository.create(session, data, hashed_password)
+        return await self.user_repo.create(data, hashed_password)
 
-    @staticmethod
+
     async def create_user_by_admin(
-        session: AsyncSession,
+        self,
         data: UserCreate,
         current_user: User,
     ) -> User:
         if current_user.role != UserRole.ADMIN:
             raise ValueError("Только администратор может создавать новых пользователей.")
 
-        return await UserService.register_user(session, data)
+        return await self.register_user(data)
 
-    @staticmethod
+
     async def update_user(
-        session: AsyncSession,
+        self,
         user_id: int,
         data: UserUpdate,
         current_user: User,
     ) -> User:
-        user = await UserService.get_user_by_id(session, user_id)
+        user = await self.get_user_by_id(user_id)
 
         if current_user.role != UserRole.ADMIN and current_user.id != user.id:
             raise ValueError("Пользователь может обновлять только свои данные.")
 
-        return await UserRepository.update(session, user, data)
+        return await self.user_repo.update(user, data)
 
-    @staticmethod
-    async def delete_user(session: AsyncSession, user_id: int, current_user: User) -> None:
+
+    async def delete_user(self, user_id: int, current_user: User) -> None:
         if current_user.role != UserRole.ADMIN:
             raise ValueError("Только администратор может удалять пользователей.")
 
-        user = await UserService.get_user_by_id(session, user_id)
-        await UserRepository.delete(session, user)
+        user = await self.get_user_by_id(user_id)
+        await self.user_repo.delete(user)
 
-    @staticmethod
-    async def login_user(session: AsyncSession, data: UserLogin) -> Token:
-        user = await UserRepository.get_by_email(session, data.email)
+
+    async def login_user(self, data: UserLogin) -> Token:
+        user = await self.user_repo.get_by_email(data.email)
         if not user or not verify_password(data.password, user.hashed_password):
             raise ValueError("Неверные учетные данные.")
 
         return create_tokens({"user_id": user.id, "email": user.email, "role": user.role.value})
 
-    @staticmethod
-    async def refresh_token(current_user: User) -> Token:
+
+    async def refresh_token(self, current_user: User) -> Token:
         return create_tokens(
             {"user_id": current_user.id, "email": current_user.email, "role": current_user.role.value}
         )

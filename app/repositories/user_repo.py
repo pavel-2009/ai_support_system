@@ -9,37 +9,40 @@ from app.schemas.user import UserCreate, UserUpdate
 
 class UserRepository:
     """Низкоуровневые операции с таблицей users."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
-    @staticmethod
-    async def get_by_id(session: AsyncSession, user_id: int) -> User | None:
-        result = await session.execute(select(User).where(User.id == user_id))
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        result = await self.session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
-    @staticmethod
-    async def get_by_email(session: AsyncSession, email: str) -> User | None:
-        result = await session.execute(select(User).where(User.email == email))
+
+    async def get_by_email(self, email: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
-    @staticmethod
-    async def list_all(session: AsyncSession) -> list[User]:
-        result = await session.execute(select(User).order_by(User.id.asc()))
+
+    async def list_all(self) -> list[User]:
+        result = await self.session.execute(select(User).order_by(User.id.asc()))
         return list(result.scalars().all())
 
-    @staticmethod
-    async def create(session: AsyncSession, data: UserCreate, hashed_password: str) -> User:
+
+    async def create(self, data: UserCreate, hashed_password: str) -> User:
         user = User(
             email=data.email,
             nickname=data.nickname,
             fullname=data.full_name or data.nickname,
             hashed_password=hashed_password,
         )
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
+        self.session.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
         return user
 
-    @staticmethod
-    async def update(session: AsyncSession, user: User, data: UserUpdate) -> User:
+
+    async def update(self, user: User, data: UserUpdate) -> User:
         payload = data.model_dump(exclude_unset=True)
         if "full_name" in payload:
             payload["fullname"] = payload.pop("full_name")
@@ -47,19 +50,18 @@ class UserRepository:
         for key, value in payload.items():
             setattr(user, key, value)
 
-        await session.commit()
-        await session.refresh(user)
+        await self.session.commit()
+        await self.session.refresh(user)
         return user
 
-    @staticmethod
-    async def delete(session: AsyncSession, user: User) -> None:
-        await session.execute(delete(User).where(User.id == user.id))
-        await session.commit()
 
-    @staticmethod
+    async def delete(self, user: User) -> None:
+        await self.session.execute(delete(User).where(User.id == user.id))
+        await self.session.commit()
+
+
     async def exists(
-        session: AsyncSession,
-        *,
+        self,
         email: str | None = None,
         user_id: int | None = None,
     ) -> bool:
@@ -69,21 +71,21 @@ class UserRepository:
         if user_id is not None:
             query = query.where(User.id == user_id)
 
-        result = await session.execute(query)
+        result = await self.session.execute(query)
         return result.scalar_one_or_none() is not None
 
-    # Backward-compatible aliases for existing tests/callers.
+    # Удобные методы для проверки существования и получения пользователя
     user_exists = exists
 
-    @staticmethod
-    async def get_user_by_email(session: AsyncSession, email: str) -> User:
-        if not await UserRepository.user_exists(session, email=email):
-            raise ValueError("Пользователь с таким email не найден.")
-        return await UserRepository.get_by_email(session, email)
 
-    @staticmethod
-    async def get_user_by_id(session: AsyncSession, user_id: int) -> User:
-        user = await UserRepository.get_by_id(session, user_id)
+    async def get_user_by_email(self, email: str) -> User:
+        if not await self.user_exists(email=email):
+            raise ValueError("Пользователь с таким email не найден.")
+        return await self.get_by_email(email)
+
+
+    async def get_user_by_id(self, user_id: int) -> User:
+        user = await self.get_by_id(user_id)
         if user is None:
             raise ValueError("Пользователь с таким ID не найден.")
         return user

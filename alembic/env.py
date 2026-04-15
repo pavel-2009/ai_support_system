@@ -8,6 +8,7 @@ from alembic import context
 
 from app.db import Base
 from app.models.user import User, UserRole  # noqa: F401 - импортируем модели для регистрации в метаданных
+from app.models.conversation import Conversation, Status, Priority, Channel  # noqa: F401 - импортируем модели для регистрации в метаданных
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
