@@ -23,6 +23,9 @@ class ConversationService:
     async def get_conversation_by_id(self, conversation_id: int) -> Conversation | None:
         return await self.conversation_repo.get_conversation_by_id(conversation_id)
 
+    async def get_active_queue(self) -> list[Conversation]:
+        return await self.conversation_repo.get_active_queue()
+
     async def update_conversation_status(
         self,
         conversation_id: int,

@@ -38,4 +38,15 @@ class User(Base):
         foreign_keys="Conversation.operator_id",
         back_populates="operator",
     )
+    conversation_links = relationship(
+        "ConversationOperatorLink",
+        back_populates="operator",
+        foreign_keys="ConversationOperatorLink.operator_id",
+        cascade="all, delete-orphan",
+    )
+    audit_logs = relationship(
+        "AuditLog",
+        back_populates="actor",
+        foreign_keys="AuditLog.actor_id",
+    )
     messages = relationship("Message", back_populates="sender", cascade="all, delete-orphan")
