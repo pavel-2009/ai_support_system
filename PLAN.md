@@ -2,20 +2,22 @@
 
 ## 1) Текущий статус проекта
 
-Проект перешёл на этап **user/auth + conversations + базовый messages контур**:
+Проект находится на этапе **user/auth + conversations + messages + базовый operator queue/audit**:
 
 - Реализована FastAPI-архитектура по слоям (`routers/services/repositories/models/schemas`).
 - Реализованы `users`, `conversations`, `messages` (модели, репозитории, сервисы, роутеры).
 - Реализованы auth-flow: `register`, `login`, `refresh`, `logout`.
-- Реализованы RBAC-проверки для user/admin и ограничения доступа к чужим диалогам/сообщениям.
-- Тестовый набор расширен: покрыты схемы, сервисы, репозитории, роутеры и edge cases для сообщений.
+- Добавлены базовые `audit_logs` (события создания/смены статуса/назначения/закрытия).
+- Добавлена промежуточная модель `conversation_operator_links` (история назначений операторов).
+- Добавлен endpoint очереди активных диалогов с сортировкой по приоритету: `GET /api/conversations/queue/active`.
+- Тестовый набор расширен: покрыты схемы, сервисы, репозитории, роутеры и edge-cases по conversations/messages/user.
 
 ### Процент готовности
 
-- **Оценка выполненной работы: ~50%**.
-- **Оставшийся объём: ~50%**.
+- **Оценка выполненной работы: ~62%**.
+- **Оставшийся объём: ~38%**.
 
-> Почему 50%: закрыт базовый пользовательский контур сообщений (создание/чтение), но ещё отсутствуют аудит действий, state machine переходов, AI-routing и операторская очередь.
+> Почему 62%: закрыт пользовательский контур + базовые аудит/очередь, но ещё не реализованы AI pipeline, полный операторский workflow (assign/reply/close/back_to_ai), лимиты нагрузки операторов и observability-метрики.
 
 ---
 
@@ -30,71 +32,79 @@
 - [x] Модель `users` + миграции.
 - [x] Модель `conversations`.
 - [x] Модель `messages`.
-- [ ] `audit_logs` — не реализованы.
+- [x] Модель `audit_logs` + миграция.
+- [x] Модель `conversation_operator_links` + миграция.
 
 ### 2.3 Auth и доступ
 - [x] Регистрация.
 - [x] JWT access/refresh.
 - [x] Логин + refresh endpoint.
 - [x] RBAC для admin/user.
-- [~] Частично: operator-сценарии и расширенный workflow доступа не завершены.
+- [~] Частично: operator-сценарии реализованы только для просмотра active queue.
 
 ### 2.4 API поддержки
 - [x] `POST /api/conversations/`.
 - [x] `GET /api/conversations/{id}`.
 - [x] `GET /api/conversations/{id}/messages`.
 - [x] `POST /api/conversations/{id}/messages`.
+- [x] `GET /api/conversations/queue/active` (operator/admin).
 - [ ] Список диалогов пользователя.
-- [ ] Close/reopen/status transition API.
+- [ ] `POST /conversations/{id}/close` для пользователя.
+- [ ] Полноценный transition API для операторов.
 
 ### 2.5 Качество
 - [x] Unit/e2e тесты для user/auth.
 - [x] Unit/e2e тесты для users/conversations.
-- [x] Unit-тесты для message-схем, репозитория, сервиса и роутера (включая edge cases).
+- [x] Unit-тесты для messages.
+- [x] Unit-тесты для audit/operator-links/active-queue.
 
 ---
 
 ## 3) Что не реализовано (Gap к MVP)
 
-1. **Домен поддержки**
-   - Нет `audit_logs` и протоколирования действий.
-
-2. **AI processing**
+1. **AI processing**
    - Нет LLM adapter/pipeline обработки.
    - Нет confidence routing и fallback-эскалации.
 
-3. **Operator workflow**
-   - Нет очереди эскалаций.
-   - Нет `assign/reply/close/back_to_ai` API для операторов.
+2. **Operator workflow (полный)**
+   - Нет API: `assign/reply/close/back_to_ai`.
    - Нет лимита активных диалогов на оператора.
+   - Нет правил SLA/таймаутного автозакрытия.
+
+3. **User conversation completeness**
+   - Нет списка собственных диалогов с фильтрами/пагинацией.
+   - Нет user-эндпоинта закрытия диалога.
 
 4. **Observability / эксплуатация**
-   - Нет audit trail и метрик Prometheus.
+   - Нет метрик Prometheus.
    - Нет readiness endpoint.
+   - Нет структурированных событий AI-решений (latency/confidence).
 
 ---
 
 ## 4) Обновлённый план до MVP
 
-## Этап A — Audit + state transitions (2–3 дня)
-- Добавить модель/миграции `audit_logs`.
-- Формализовать state machine переходов.
-- Логировать смены статусов и назначения.
-
-## Этап B — User Conversation API completion (1–2 дня)
+## Этап A — Conversation API completion (1–2 дня)
 - `GET /conversations` (фильтры, пагинация).
-- `POST /conversations/{id}/close`.
-- Проверки изоляции и прав для новых действий.
+- `POST /conversations/{id}/close` (user).
+- Доработка проверок изоляции и прав.
 
-## Этап C — AI adapter и routing (2–3 дня)
+## Этап B — Operator workflow completion (2–3 дня)
+- `POST /operator/assign/{conversation_id}`.
+- `POST /operator/reply/{conversation_id}`.
+- `POST /operator/close/{conversation_id}`.
+- `POST /operator/back_to_ai/{conversation_id}`.
+- Ограничение до N активных диалогов на оператора.
+
+## Этап C — State machine hardening (1–2 дня)
+- Валидация допустимых переходов статусов.
+- Централизация transition-логики.
+- Расширение audit-полей при переходах.
+
+## Этап D — AI adapter и routing (2–3 дня)
 - Интерфейс LLM adapter + OpenAI реализация.
 - Асинхронный pipeline.
 - Confidence routing и fallback-эскалация.
-
-## Этап D — Operator API (1–2 дня)
-- Очередь эскалаций.
-- API для assign/reply/close/back_to_ai.
-- Ограничение активных диалогов на оператора.
 
 ## Этап E — Observability + polishing (1–2 дня)
 - JSON-логи и метрики.
@@ -105,17 +115,18 @@
 
 ## 5) Остаточная оценка сроков
 
-- **Осталось: 6–10 рабочих дней**.
-- **Оптимистично:** 6–7 дней.
-- **Реалистично:** 8–10 дней.
+- **Осталось: 5–9 рабочих дней**.
+- **Оптимистично:** 5–6 дней.
+- **Реалистично:** 7–9 дней.
 
 ---
 
 ## 6) Критерий завершения текущего этапа (checkpoint)
 
-Текущий этап (**user/auth + conversations + messages basic**) считается завершённым, когда:
+Текущий этап (**user/auth + conversations + messages + basic audit/queue**) считается завершённым, когда:
 - message-поток стабилен (create/list) для авторизованных участников диалога;
-- покрыты тестами схемы/сервисы/репозитории/роутеры по сообщениям;
-- зафиксирован backlog на `audit/state machine/AI/operator`.
+- базовые audit-события и история назначений операторов сохраняются;
+- active queue доступна operator/admin и сортируется по priority;
+- зафиксирован backlog на `state machine hardening/AI/full operator workflow`.
 
-**Checkpoint status: достигнут; следующий фокус — Audit + state machine.**
+**Checkpoint status: почти достигнут; следующий фокус — completion operator workflow + state machine hardening.**

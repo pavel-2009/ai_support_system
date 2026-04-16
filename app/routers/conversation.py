@@ -23,6 +23,19 @@ async def create_conversation(
     )
 
 
+@router.get("/queue/active", response_model=list[ConversationGet])
+async def get_active_conversations_queue(
+    current_user: User = Depends(get_current_user),
+    conversation_service: ConversationService = Depends(get_conversation_service),
+) -> list[ConversationGet]:
+    if current_user.role.value not in {"operator", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только оператор или администратор могут просматривать очередь.",
+        )
+    return await conversation_service.get_active_queue()
+
+
 @router.get("/{conversation_id}", response_model=ConversationGet)
 async def get_conversation(
     conversation_id: int,
