@@ -16,7 +16,10 @@ venv/
 .env.local
 *.env.*
 
-app.db
+# SQLite database files
+*.db
+
+.VSCodeCounter/
 
 # IDE specific
 .vscode/
