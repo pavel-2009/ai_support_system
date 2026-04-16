@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.routers.conversation import router as conversation_router
 from app.routers.user import admin_router, auth_router, users_router
+from app.routers.message import router as message_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -20,6 +21,7 @@ app.include_router(users_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(conversation_router)
+app.include_router(message_router)
 
 
 @app.get("/health", tags=["Health"], summary="Проверка работоспособности API")

@@ -185,10 +185,6 @@ class TestRouterExtended:
         bad_refresh = client.post("/api/auth/refresh", json={"refresh_token": "invalid.refresh.token"})
         assert bad_refresh.status_code == 401
 
-        # Для полноты — logout всегда ок
-        logout = client.post("/api/auth/logout")
-        assert logout.status_code == 200
-        assert logout.json() == {"status": "ok"}
 
     def test_admin_user_router_success_paths(self, admin_client):
         users = admin_client.get("/api/users/")

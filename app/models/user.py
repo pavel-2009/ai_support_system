@@ -38,3 +38,4 @@ class User(Base):
         foreign_keys="Conversation.operator_id",
         back_populates="operator",
     )
+    messages = relationship("Message", back_populates="sender", cascade="all, delete-orphan")

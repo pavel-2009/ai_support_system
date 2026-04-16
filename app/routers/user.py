@@ -30,6 +30,8 @@ async def get_all_users(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> list[UserGet]:
+    """Получить список всех пользователей (только для админов)."""
+    
     if current_user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
 
@@ -38,6 +40,8 @@ async def get_all_users(
 
 @users_router.get("/me", response_model=UserGet, summary="Текущий пользователь")
 async def get_me(current_user: User = Depends(get_current_user)) -> UserGet:
+    """Получение данных текущего пользователя."""
+    
     return current_user
 
 
@@ -47,6 +51,8 @@ async def get_user_by_id(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    """Получить пользователя по ID."""
+    
     if current_user.role.value != "admin" and current_user.id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
 
@@ -62,6 +68,8 @@ async def create_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    """Создать нового пользователя."""
+    
     if current_user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
     try:
@@ -77,6 +85,8 @@ async def update_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    """Изменить данные пользователя."""
+    
     try:
         return await UserService(session).update_user(user_id, data, current_user)
     except ValueError as exc:
@@ -89,6 +99,8 @@ async def update_me(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    """Обновить данные текущего пользователя."""
+    
     return await update_user(current_user.id, data, session, current_user)
 
 
@@ -98,6 +110,8 @@ async def delete_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
+    """Удалить пользователя."""
+    
     try:
         await UserService(session).delete_user(user_id, current_user)
     except ValueError as exc:
@@ -109,6 +123,8 @@ async def register_user(
     data: UserCreate,
     session: AsyncSession = Depends(get_async_session),
 ) -> UserGet:
+    """Регистрация нового пользователя."""
+    
     try:
         return await UserService(session).register_user(data)
     except ValueError as exc:
@@ -120,6 +136,8 @@ async def login_user(
     data: UserLogin,
     session: AsyncSession = Depends(get_async_session),
 ) -> Token:
+    """Аутентификация пользователя и выдача токенов."""
+    
     try:
         return await UserService(session).login_user(data)
     except ValueError as exc:
@@ -130,6 +148,8 @@ async def login_user(
 async def refresh_token(
     data: RefreshTokenRequest,
 ) -> Token:
+    """Обновить access токен с помощью refresh токена."""
+    
     payload = verify_refresh_token(data.refresh_token)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный refresh токен.")
@@ -137,16 +157,13 @@ async def refresh_token(
     return create_tokens(user_data)
 
 
-@auth_router.post("/logout", summary="Выход")
-async def logout_user() -> dict[str, str]:
-    return {"status": "ok"}
-
-
 @admin_router.get("/users", response_model=list[UserGet], summary="Админ: список пользователей")
 async def admin_get_all_users(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> list[UserGet]:
+    """Получить список всех пользователей (только для админов)."""
+    
     return await get_all_users(session, current_user)
 
 
@@ -156,4 +173,6 @@ async def admin_create_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ) -> UserGet:
+    """Создать нового пользователя (только для админов)."""
+    
     return await create_user(data, session, current_user)

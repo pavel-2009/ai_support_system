@@ -48,5 +48,6 @@ class Conversation(Base):
 
     user = relationship("User", foreign_keys=[user_id], back_populates="conversations")
     operator = relationship("User", foreign_keys=[operator_id], back_populates="operator_conversations")
+    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 
     __table_args__ = (Index("idx_status_priority", "status", "priority"),)
