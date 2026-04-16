@@ -1,5 +1,7 @@
 """SQLAlchemy модель для сообщений."""
 
+from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Float, Text, Index
 from sqlalchemy.orm import relationship
 
@@ -19,7 +21,7 @@ class Message(Base):
     is_auto_reply = Column(Boolean, default=False, nullable=False)
     confidence = Column(Float, nullable=True)
     needs_review = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Отношения
     conversation = relationship("Conversation", back_populates="messages")
