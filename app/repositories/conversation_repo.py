@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import (
@@ -50,6 +50,72 @@ class ConversationRepository:
             select(Conversation).where(Conversation.id == conversation_id)
         )
         return result.scalar_one_or_none()
+
+    async def list_conversations(
+        self,
+        limit: int,
+        offset: int,
+        status_filter: Status | None = None,
+        priority_filter: Priority | None = None,
+        channel_filter: Channel | None = None,
+        user_id_filter: int | None = None,
+        operator_id_filter: int | None = None,
+        participant_id: int | None = None,
+    ) -> list[Conversation]:
+        """Получить список диалогов с простыми фильтрами и пагинацией."""
+        query = select(Conversation)
+
+        if participant_id is not None:
+            query = query.where(
+                (Conversation.user_id == participant_id)
+                | (Conversation.operator_id == participant_id)
+            )
+        if status_filter is not None:
+            query = query.where(Conversation.status == status_filter)
+        if priority_filter is not None:
+            query = query.where(Conversation.priority == priority_filter)
+        if channel_filter is not None:
+            query = query.where(Conversation.channel == channel_filter)
+        if user_id_filter is not None:
+            query = query.where(Conversation.user_id == user_id_filter)
+        if operator_id_filter is not None:
+            query = query.where(Conversation.operator_id == operator_id_filter)
+
+        result = await self.session.execute(
+            query.order_by(Conversation.created_at.desc()).limit(limit).offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def count_conversations(
+        self,
+        status_filter: Status | None = None,
+        priority_filter: Priority | None = None,
+        channel_filter: Channel | None = None,
+        user_id_filter: int | None = None,
+        operator_id_filter: int | None = None,
+        participant_id: int | None = None,
+    ) -> int:
+        """Посчитать количество диалогов по тем же фильтрам, что и list_conversations."""
+        query = select(func.count(Conversation.id))
+
+        if participant_id is not None:
+            query = query.where(
+                (Conversation.user_id == participant_id)
+                | (Conversation.operator_id == participant_id)
+            )
+        if status_filter is not None:
+            query = query.where(Conversation.status == status_filter)
+        if priority_filter is not None:
+            query = query.where(Conversation.priority == priority_filter)
+        if channel_filter is not None:
+            query = query.where(Conversation.channel == channel_filter)
+        if user_id_filter is not None:
+            query = query.where(Conversation.user_id == user_id_filter)
+        if operator_id_filter is not None:
+            query = query.where(Conversation.operator_id == operator_id_filter)
+
+        result = await self.session.execute(query)
+        return int(result.scalar_one())
 
     async def get_active_queue(self) -> list[Conversation]:
         priority_order = case(
