@@ -41,3 +41,12 @@ class ConversationUpdate(BaseModel):
 
     status: Status | None = Field(None, description="Новый статус")
     operator_id: int | None = Field(None, description="Новый оператор")
+
+
+class ConversationListResponse(BaseModel):
+    """Ответ со списком диалогов и базовой пагинацией."""
+
+    items: list[ConversationGet] = Field(default_factory=list)
+    total: int = Field(..., ge=0)
+    page: int = Field(..., ge=1)
+    size: int = Field(..., ge=1)

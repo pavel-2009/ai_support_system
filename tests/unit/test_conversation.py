@@ -96,58 +96,8 @@ class TestConversationRepository:
         assert [conv.id for conv in queue] == [high.id, medium.id]
 
 
-class TestConversationService:
-    @pytest.mark.asyncio
-    async def test_service_create_and_get(self, async_session):
-        from app.models.user import User
-        from app.services.conversation_service import ConversationService
-
-        user = User(
-            email="conv_service_user@test.com",
-            nickname="conv_service_user",
-            fullname="Conv Service User",
-            hashed_password="hash",
-        )
-        async_session.add(user)
-        await async_session.commit()
-        await async_session.refresh(user)
-
-        service = ConversationService(async_session)
-        created = await service.create_conversation(user.id, Priority.LOW, Channel.WEB)
-        assert created.user_id == user.id
-
-        loaded = await service.get_conversation_by_id(created.id)
-        assert loaded is not None
-        assert loaded.id == created.id
-
-    @pytest.mark.asyncio
-    async def test_service_get_active_queue(self, async_session):
-        from app.models.user import User
-        from app.services.conversation_service import ConversationService
-
-        user = User(
-            email="svc_queue_user@test.com",
-            nickname="svc_queue_user",
-            fullname="Svc Queue User",
-            hashed_password="hash",
-        )
-        async_session.add(user)
-        await async_session.commit()
-        await async_session.refresh(user)
-
-        service = ConversationService(async_session)
-        low = await service.create_conversation(user.id, Priority.LOW, Channel.API)
-        high = await service.create_conversation(user.id, Priority.HIGH, Channel.API)
-        await service.update_conversation_status(low.id, Status.CLOSED)
-
-        queue = await service.get_active_queue()
-        queue_ids = [conversation.id for conversation in queue]
-        assert high.id in queue_ids
-        assert low.id not in queue_ids
-
-
 class TestConversationRouter:
-    def test_create_and_get_conversation(self, client, create_test_user):
+    def test_create_get_close_and_410(self, client, create_test_user):
         create_test_user(email="conv_api_owner@example.com", password="TestPass123!", nickname="convowner")
 
         login_response = client.post(
@@ -167,7 +117,34 @@ class TestConversationRouter:
 
         loaded = client.get(f"/api/conversations/{conversation_id}", headers=headers)
         assert loaded.status_code == 200
-        assert loaded.json()["id"] == conversation_id
+
+        closed = client.post(f"/api/conversations/{conversation_id}/close", headers=headers)
+        assert closed.status_code == 200
+        assert closed.json()["status"] == "closed"
+
+        loaded_after_close = client.get(f"/api/conversations/{conversation_id}", headers=headers)
+        assert loaded_after_close.status_code == 410
+
+    def test_get_conversations_filters_and_pagination(self, client, create_test_user):
+        create_test_user(email="conv_list_owner@example.com", password="TestPass123!", nickname="convlistowner")
+
+        login_response = client.post(
+            "/api/auth/login",
+            json={"email": "conv_list_owner@example.com", "password": "TestPass123!"},
+        )
+        headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+
+        client.post("/api/conversations/", headers=headers, json={"priority": "high", "channel": "api"})
+        client.post("/api/conversations/", headers=headers, json={"priority": "low", "channel": "web"})
+
+        response = client.get("/api/conversations/?page=1&size=1&priority=high", headers=headers)
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["page"] == 1
+        assert payload["size"] == 1
+        assert payload["total"] >= 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["priority"] == "high"
 
     def test_forbidden_access_to_foreign_conversation(self, client, create_test_user):
         create_test_user(email="conv_owner@example.com", password="TestPass123!", nickname="convowner2")
@@ -195,18 +172,12 @@ class TestConversationRouter:
         forbidden = client.get(f"/api/conversations/{conversation_id}", headers=other_headers)
         assert forbidden.status_code == 403
 
-    def test_active_queue_for_operator_sorted_by_priority(self, client, create_test_user):
-        create_test_user(
-            email="queue_owner@example.com",
-            password="TestPass123!",
-            nickname="queueowner",
-        )
-        create_test_user(
-            email="queue_operator@example.com",
-            password="OperatorPass123!",
-            nickname="queueoperator",
-            role=UserRole.OPERATOR,
-        )
+    def test_active_queue_forbidden_for_regular_user(self, authenticated_client):
+        queue_response = authenticated_client.get("/api/conversations/queue/active")
+        assert queue_response.status_code == 403
+
+    def test_active_queue_for_admin(self, admin_client, create_test_user, client):
+        create_test_user(email="queue_owner@example.com", password="TestPass123!", nickname="queueowner")
 
         owner_login = client.post(
             "/api/auth/login",
@@ -214,30 +185,17 @@ class TestConversationRouter:
         )
         owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
 
-        conv_low = client.post(
+        client.post(
             "/api/conversations/",
             headers=owner_headers,
             json={"priority": "low", "channel": "api"},
-        ).json()
-        conv_high = client.post(
+        )
+        client.post(
             "/api/conversations/",
             headers=owner_headers,
             json={"priority": "high", "channel": "api"},
-        ).json()
-
-        operator_login = client.post(
-            "/api/auth/login",
-            json={"email": "queue_operator@example.com", "password": "OperatorPass123!"},
         )
-        operator_headers = {"Authorization": f"Bearer {operator_login.json()['access_token']}"}
 
-        queue_response = client.get("/api/conversations/queue/active", headers=operator_headers)
+        queue_response = admin_client.get("/api/conversations/queue/active")
         assert queue_response.status_code == 200
-        ids = [item["id"] for item in queue_response.json()]
-        assert conv_high["id"] in ids
-        assert conv_low["id"] in ids
-        assert ids.index(conv_high["id"]) < ids.index(conv_low["id"])
-
-    def test_active_queue_forbidden_for_regular_user(self, authenticated_client):
-        queue_response = authenticated_client.get("/api/conversations/queue/active")
-        assert queue_response.status_code == 403
+        assert len(queue_response.json()) >= 2

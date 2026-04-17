@@ -1,5 +1,6 @@
 """Minimal tests for app/core/dependencies.py"""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,3 +46,25 @@ class TestGetCurrentUser:
         from app.core.dependencies import oauth2_scheme
 
         assert oauth2_scheme is not None
+
+
+class TestConversationAccess:
+    def test_ensure_conversation_access_forbidden(self):
+        from app.core.dependencies import ensure_conversation_access
+
+        current_user = SimpleNamespace(id=1, role=SimpleNamespace(value="user"))
+        conversation = SimpleNamespace(id=10, user_id=2, operator_id=3)
+
+        with pytest.raises(HTTPException) as exc_info:
+            ensure_conversation_access(current_user=current_user, conversation=conversation)
+        assert exc_info.value.status_code == 403
+
+    def test_ensure_conversation_is_open_gone(self):
+        from app.core.dependencies import ensure_conversation_is_open
+        from app.models.conversation import Status
+
+        conversation = SimpleNamespace(id=10, status=Status.CLOSED)
+
+        with pytest.raises(HTTPException) as exc_info:
+            ensure_conversation_is_open(conversation)
+        assert exc_info.value.status_code == 410

@@ -138,6 +138,26 @@ class TestMessageRouter:
         assert len(listed.json()) == 1
         assert listed.json()[0]["sender_id"] > 0
 
+
+    def test_get_messages_closed_conversation_returns_410(self, client, create_test_user):
+        owner_email = f"msg_closed_owner_{uuid4().hex[:8]}@example.com"
+        create_test_user(email=owner_email, password="TestPass123!", nickname=f"msg_closed_owner_{uuid4().hex[:8]}")
+
+        owner_login = client.post("/api/auth/login", json={"email": owner_email, "password": "TestPass123!"})
+        headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+
+        created = client.post(
+            "/api/conversations/",
+            headers=headers,
+            json={"priority": "medium", "channel": "api"},
+        )
+        conversation_id = created.json()["id"]
+
+        client.post(f"/api/conversations/{conversation_id}/close", headers=headers)
+
+        listed = client.get(f"/api/conversations/{conversation_id}/messages", headers=headers)
+        assert listed.status_code == 410
+
     def test_send_message_edge_cases_404_and_403(self, client, create_test_user):
         owner_email = f"msg_owner_{uuid4().hex[:8]}@example.com"
         outsider_email = f"msg_outsider_{uuid4().hex[:8]}@example.com"
