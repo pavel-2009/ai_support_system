@@ -79,14 +79,14 @@ class LLMRepository:
         self,
         conversation_id: int,
         session: AsyncSession
-        ) -> str:
+        ) -> List[dict]:
         """Генерирует промпт для LLM модели на основе истории разговора."""
         
         # Получаем историю сообщений для данного conversation_id
         result = asyncio.run(session.execute(select(Message).where(Message.conversation_id == conversation_id)))
         last_messages: List[Message] = sorted(result.scalars().all(), key=lambda x: x.created_at, reverse=True)[:5]  # Берем последние 5 сообщений
         
-        conversation_history = {msg.sender_type: msg.content for msg in last_messages}
+        conversation_history = [msg.content for msg in last_messages]
         
         return self._generate_messages_history(conversation_history)
         
@@ -98,12 +98,15 @@ class LLMRepository:
         session: AsyncSession
     ) -> LLMResponse:
         """Получает ответ от LLM модели на основе истории разговора."""
-        
+        last_error: Exception | None = None
         for _ in range(settings.LLM_RETRY_ATTEMPTS):
             try:
                 return self._generate_response(conversation_id, session)
             except Exception as e:
+                last_error = e
                 print(f"LLM response generation failed: {str(e)}. Retrying...") # print пока заглушка для логирования
                 continue
-                
-        raise LLMResponseFailed(f"Failed to get response from LLM model: {str(e)}")
+
+        raise LLMResponseFailed(
+            f"Failed to get response from LLM model: {str(last_error) if last_error else 'Unknown error'}"
+        )
