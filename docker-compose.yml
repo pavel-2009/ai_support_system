@@ -1,0 +1,23 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/app
+    command: uvicorn main:app
+    depends_on:
+      - celery
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6380:6380"
+
+  celery:
+    build: .
+    command: celery -A main.celery worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
