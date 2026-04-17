@@ -8,6 +8,7 @@ from app.core.security import verify_access_token
 from app.db import get_async_session
 from app.models.user import User
 from app.services.conversation_service import ConversationService
+from app.services.message_service import MessageService
 from app.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -53,3 +54,10 @@ async def get_conversation_service(
 ) -> ConversationService:
     """Зависимость для получения сервиса работы с диалогами."""
     return ConversationService(session)
+
+
+async def get_message_service(
+    session: AsyncSession = Depends(get_async_session),
+) -> MessageService:
+    """Зависимость для получения сервиса работы с сообщениями."""
+    return MessageService(session)

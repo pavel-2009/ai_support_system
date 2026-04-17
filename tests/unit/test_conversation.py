@@ -1,8 +1,10 @@
 """Базовые тесты для conversation репозитория, сервиса и роутера."""
 
 import pytest
+from sqlalchemy import select
 
-from app.models.conversation import Channel, Priority, Status
+from app.models.conversation import AuditLog, Channel, ConversationOperatorLink, Priority, Status
+from app.models.user import UserRole
 
 
 class TestConversationRepository:
@@ -44,10 +46,54 @@ class TestConversationRepository:
         assigned = await repo.assign_operator(conv.id, operator.id)
         assert assigned is not None
         assert assigned.operator_id == operator.id
+        assert assigned.status == Status.WAITING_FOR_OPERATOR
+
+        links = (
+            await async_session.execute(
+                select(ConversationOperatorLink).where(
+                    ConversationOperatorLink.conversation_id == conv.id
+                )
+            )
+        ).scalars().all()
+        assert len(links) == 1
+        assert links[0].operator_id == operator.id
+        assert links[0].is_active is True
 
         closed = await repo.close_conversation(conv.id)
         assert closed is not None
         assert closed.status == Status.CLOSED
+
+        logs = (
+            await async_session.execute(select(AuditLog).where(AuditLog.conversation_id == conv.id))
+        ).scalars().all()
+        actions = {log.action for log in logs}
+        assert "conversation_created" in actions
+        assert "operator_assigned" in actions
+        assert "conversation_closed" in actions
+
+    @pytest.mark.asyncio
+    async def test_repo_active_queue_sorted_by_priority(self, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+
+        user = User(
+            email="conv_queue_user@test.com",
+            nickname="conv_queue_user",
+            fullname="Conv Queue User",
+            hashed_password="hash",
+        )
+        async_session.add(user)
+        await async_session.commit()
+        await async_session.refresh(user)
+
+        repo = ConversationRepository(async_session)
+        low = await repo.create_conversation(user.id, Priority.LOW, Channel.WEB)
+        medium = await repo.create_conversation(user.id, Priority.MEDIUM, Channel.API)
+        high = await repo.create_conversation(user.id, Priority.HIGH, Channel.EMAIL)
+        await repo.update_conversation_status(low.id, Status.CLOSED)
+
+        queue = await repo.get_active_queue()
+        assert [conv.id for conv in queue] == [high.id, medium.id]
 
 
 class TestConversationService:
@@ -73,6 +119,31 @@ class TestConversationService:
         loaded = await service.get_conversation_by_id(created.id)
         assert loaded is not None
         assert loaded.id == created.id
+
+    @pytest.mark.asyncio
+    async def test_service_get_active_queue(self, async_session):
+        from app.models.user import User
+        from app.services.conversation_service import ConversationService
+
+        user = User(
+            email="svc_queue_user@test.com",
+            nickname="svc_queue_user",
+            fullname="Svc Queue User",
+            hashed_password="hash",
+        )
+        async_session.add(user)
+        await async_session.commit()
+        await async_session.refresh(user)
+
+        service = ConversationService(async_session)
+        low = await service.create_conversation(user.id, Priority.LOW, Channel.API)
+        high = await service.create_conversation(user.id, Priority.HIGH, Channel.API)
+        await service.update_conversation_status(low.id, Status.CLOSED)
+
+        queue = await service.get_active_queue()
+        queue_ids = [conversation.id for conversation in queue]
+        assert high.id in queue_ids
+        assert low.id not in queue_ids
 
 
 class TestConversationRouter:
@@ -123,3 +194,50 @@ class TestConversationRouter:
 
         forbidden = client.get(f"/api/conversations/{conversation_id}", headers=other_headers)
         assert forbidden.status_code == 403
+
+    def test_active_queue_for_operator_sorted_by_priority(self, client, create_test_user):
+        create_test_user(
+            email="queue_owner@example.com",
+            password="TestPass123!",
+            nickname="queueowner",
+        )
+        create_test_user(
+            email="queue_operator@example.com",
+            password="OperatorPass123!",
+            nickname="queueoperator",
+            role=UserRole.OPERATOR,
+        )
+
+        owner_login = client.post(
+            "/api/auth/login",
+            json={"email": "queue_owner@example.com", "password": "TestPass123!"},
+        )
+        owner_headers = {"Authorization": f"Bearer {owner_login.json()['access_token']}"}
+
+        conv_low = client.post(
+            "/api/conversations/",
+            headers=owner_headers,
+            json={"priority": "low", "channel": "api"},
+        ).json()
+        conv_high = client.post(
+            "/api/conversations/",
+            headers=owner_headers,
+            json={"priority": "high", "channel": "api"},
+        ).json()
+
+        operator_login = client.post(
+            "/api/auth/login",
+            json={"email": "queue_operator@example.com", "password": "OperatorPass123!"},
+        )
+        operator_headers = {"Authorization": f"Bearer {operator_login.json()['access_token']}"}
+
+        queue_response = client.get("/api/conversations/queue/active", headers=operator_headers)
+        assert queue_response.status_code == 200
+        ids = [item["id"] for item in queue_response.json()]
+        assert conv_high["id"] in ids
+        assert conv_low["id"] in ids
+        assert ids.index(conv_high["id"]) < ids.index(conv_low["id"])
+
+    def test_active_queue_forbidden_for_regular_user(self, authenticated_client):
+        queue_response = authenticated_client.get("/api/conversations/queue/active")
+        assert queue_response.status_code == 403

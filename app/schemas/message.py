@@ -1,30 +1,27 @@
 """Pydantic схемы для сообщений."""
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class MessageBase(BaseModel):
-    """Базовая схема для сообщений."""
-    
+class MessageCreate(BaseModel):
+    """Схема для создания сообщений."""
+
+    content: str = Field(..., min_length=1, description="Содержимое сообщения")
+
+
+class MessageGet(BaseModel):
+    """Схема для получения сообщений."""
+
+    id: int = Field(..., description="ID сообщения")
     conversation_id: int = Field(..., description="ID беседы, к которой относится сообщение")
     sender_type: str = Field(..., description="Тип отправителя (например, 'user' или 'agent')")
     sender_id: int = Field(..., description="ID отправителя")
     content: str = Field(..., description="Содержимое сообщения")
-    is_auto_reply: bool = Field(False, description="Флаг, указывающий, является ли сообщение автоматическим ответом")
-    confidence: float = Field(None, description="Уровень уверенности для автоматических ответов")
-    needs_review: bool = Field(False, description="Флаг, указывающий, требует ли сообщение проверки")
+    is_auto_reply: bool = Field(..., description="Флаг автоматического ответа")
+    confidence: float | None = Field(None, description="Уровень уверенности для автоответов")
+    needs_review: bool = Field(..., description="Требуется ли проверка")
+    created_at: datetime = Field(..., description="Дата и время создания сообщения")
 
-
-class MessageGet(MessageBase):
-    """Схема для получения сообщений."""
-    
-    id: int = Field(..., description="ID сообщения")
-    created_at: str = Field(..., description="Дата и время создания сообщения")
-    
-    class Config:
-        orm_mode = True
-        
-        
-class MessageCreate(MessageBase):
-    """Схема для создания сообщений."""
-    pass
+    model_config = ConfigDict(from_attributes=True)
