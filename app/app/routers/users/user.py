@@ -1,8 +1,7 @@
 """Пользовательские роутеры пользователей и аутентификации."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_authenticated_user
@@ -46,23 +45,6 @@ async def get_me(current_user: User = Depends(require_authenticated_user)) -> Us
     return current_user
 
 
-@users_router.get("/{user_id}", response_model=UserGet, summary="Получить пользователя по ID")
-async def get_user_by_id(
-    user_id: int,
-    session: AsyncSession = Depends(get_async_session),
-    current_user: User = Depends(require_authenticated_user),
-) -> UserGet:
-    """Получить пользователя по ID."""
-    if current_user.role.value != "admin" and current_user.id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
-
-    try:
-        return await UserService(session).get_user_by_id(user_id)
-    except ValueError as exc:
-        logger.exception("Ошибка получения пользователя %s.", user_id)
-        raise _http_error(status.HTTP_404_NOT_FOUND, exc) from exc
-
-
 @users_router.post("/", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Создать пользователя")
 async def create_user(
     data: UserCreate,
@@ -77,6 +59,16 @@ async def create_user(
     except ValueError as exc:
         logger.exception("Ошибка создания пользователя администратором %s.", current_user.id)
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
+
+
+@users_router.patch("/me", response_model=UserGet, summary="Обновить текущего пользователя")
+async def update_me(
+    data: UserUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(require_authenticated_user),
+) -> UserGet:
+    """Обновить данные текущего пользователя."""
+    return await update_user(current_user.id, data, session, current_user)
 
 
 @users_router.patch("/{user_id}", response_model=UserGet, summary="Обновить пользователя")
@@ -94,14 +86,21 @@ async def update_user(
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
-@users_router.patch("/me", response_model=UserGet, summary="Обновить текущего пользователя")
-async def update_me(
-    data: UserUpdate,
+@users_router.get("/{user_id}", response_model=UserGet, summary="Получить пользователя по ID")
+async def get_user_by_id(
+    user_id: int,
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(require_authenticated_user),
 ) -> UserGet:
-    """Обновить данные текущего пользователя."""
-    return await update_user(current_user.id, data, session, current_user)
+    """Получить пользователя по ID."""
+    if current_user.role.value != "admin" and current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав.")
+
+    try:
+        return await UserService(session).get_user_by_id(user_id)
+    except ValueError as exc:
+        logger.exception("Ошибка получения пользователя %s.", user_id)
+        raise _http_error(status.HTTP_404_NOT_FOUND, exc) from exc
 
 
 @users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить пользователя")
@@ -131,20 +130,28 @@ async def register_user(
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
-@auth_router.post("/login", response_model=Token, summary="Логин через OAuth2 (для Swagger)")
-async def login_oauth2(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+@auth_router.post("/login", response_model=Token, summary="Логин пользователя")
+async def login_user(
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
 ) -> Token:
-    """
-    OAuth2 совместимый эндпоинт для аутентификации.
-    """
+    """Логин с поддержкой JSON payload и OAuth2 form-data."""
+    content_type = request.headers.get("content-type", "").lower()
+
     try:
-        # form_data.username содержит email, form_data.password содержит пароль
-        login_data = UserLogin(email=form_data.username, password=form_data.password)
+        if "application/json" in content_type:
+            payload = await request.json()
+            login_data = UserLogin.model_validate(payload)
+        else:
+            form_data = await request.form()
+            login_data = UserLogin(email=form_data.get("username"), password=form_data.get("password"))
+    except (ValidationError, ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Некорректный формат данных.")
+
+    try:
         return await UserService(session).login_user(login_data)
     except ValueError as exc:
-        logger.exception("Ошибка входа пользователя %s.", form_data.username)
+        logger.exception("Ошибка входа пользователя %s.", login_data.email)
         raise _http_error(status.HTTP_401_UNAUTHORIZED, exc) from exc
 
 
