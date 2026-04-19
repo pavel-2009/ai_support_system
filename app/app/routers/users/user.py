@@ -1,7 +1,6 @@
 """Пользовательские роутеры пользователей и аутентификации."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -131,20 +130,31 @@ async def register_user(
         raise _http_error(status.HTTP_400_BAD_REQUEST, exc) from exc
 
 
-@auth_router.post("/login", response_model=Token, summary="Логин через OAuth2 (для Swagger)")
-async def login_oauth2(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+@auth_router.post("/login", response_model=Token, summary="Логин пользователя")
+async def login_user(
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
 ) -> Token:
     """
-    OAuth2 совместимый эндпоинт для аутентификации.
+    Логин с поддержкой двух форматов:
+    - `application/json` (email/password) для API-клиентов и тестов;
+    - `application/x-www-form-urlencoded` (OAuth2 username/password) для Swagger.
     """
+    content_type = request.headers.get("content-type", "")
+
     try:
-        # form_data.username содержит email, form_data.password содержит пароль
-        login_data = UserLogin(email=form_data.username, password=form_data.password)
+        if "application/json" in content_type:
+            payload = await request.json()
+            login_data = UserLogin.model_validate(payload)
+            identity = login_data.email
+        else:
+            form = await request.form()
+            login_data = UserLogin(email=form.get("username", ""), password=form.get("password", ""))
+            identity = login_data.email
+
         return await UserService(session).login_user(login_data)
     except ValueError as exc:
-        logger.exception("Ошибка входа пользователя %s.", form_data.username)
+        logger.exception("Ошибка входа пользователя %s.", identity if 'identity' in locals() else 'unknown')
         raise _http_error(status.HTTP_401_UNAUTHORIZED, exc) from exc
 
 
