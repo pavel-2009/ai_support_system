@@ -2,6 +2,7 @@
 
 import pytest
 from sqlalchemy import select
+import asyncio
 
 from app.models.conversation import AuditLog, Channel, ConversationOperatorLink, Priority, Status
 from app.models.user import UserRole
@@ -90,6 +91,13 @@ class TestConversationRepository:
         low = await repo.create_conversation(user.id, Priority.LOW, Channel.WEB)
         medium = await repo.create_conversation(user.id, Priority.MEDIUM, Channel.API)
         high = await repo.create_conversation(user.id, Priority.HIGH, Channel.EMAIL)
+        
+        # Обновляем статусы диалогов для их добавления в активную очередь
+        await repo.update_conversation_status(low.id, Status.ESCALATED)
+        await repo.update_conversation_status(medium.id, Status.ESCALATED)
+        await repo.update_conversation_status(high.id, Status.ESCALATED)
+        
+        # Закрываем один диалог - он не должен появиться в очереди
         await repo.update_conversation_status(low.id, Status.CLOSED)
 
         queue = await repo.get_active_queue()
@@ -176,7 +184,11 @@ class TestConversationRouter:
         queue_response = authenticated_client.get("/api/conversations/queue/active")
         assert queue_response.status_code == 403
 
-    def test_active_queue_for_admin(self, admin_client, create_test_user, client):
+    def test_active_queue_for_admin(self, admin_client, create_test_user, client, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+        from sqlalchemy import select
+
         create_test_user(email="queue_owner@example.com", password="TestPass123!", nickname="queueowner")
 
         owner_login = client.post(
@@ -195,6 +207,20 @@ class TestConversationRouter:
             headers=owner_headers,
             json={"priority": "high", "channel": "api"},
         )
+        
+        # Получаем user_id по email
+        async def get_and_update():
+            result = await async_session.execute(
+                select(User).where(User.email == "queue_owner@example.com")
+            )
+            owner_user = result.scalar_one()
+            
+            repo = ConversationRepository(async_session)
+            convs = await repo.list_conversations(user_id_filter=owner_user.id, limit=10, offset=0)
+            for conv in convs:
+                await repo.update_conversation_status(conv.id, Status.ESCALATED)
+        
+        asyncio.run(get_and_update())
 
         queue_response = admin_client.get("/api/conversations/queue/active")
         assert queue_response.status_code == 200

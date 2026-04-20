@@ -13,6 +13,7 @@ from app.db import get_async_session
 from app.routers.users.conversation import router as conversation_router
 from app.routers.users.message import router as message_router
 from app.routers.users.user import admin_router, auth_router, users_router
+from app.routers.operator.conversation import router as operator_router
 
 configure_logging()
 logger = get_logger(__name__)
@@ -32,6 +33,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(conversation_router)
 app.include_router(message_router)
+app.include_router(operator_router)
 
 
 @app.get("/health", tags=["Health"], summary="Проверка работоспособности API")

@@ -13,6 +13,7 @@ from app.models.conversation import (
     Priority,
     Status,
 )
+from app.models.message import Message
 
 
 class ConversationRepository:
@@ -134,7 +135,7 @@ class ConversationRepository:
         )
         result = await self.session.execute(
             select(Conversation)
-            .where(Conversation.status != Status.CLOSED)
+            .where(Conversation.status.in_([Status.ESCALATED]))
             .order_by(priority_order.desc(), Conversation.created_at.asc())
         )
         return list(result.scalars().all())
@@ -188,6 +189,9 @@ class ConversationRepository:
         
         conversation = await self.get_conversation_by_id(conversation_id)
         if conversation is None:
+            return None
+        
+        if conversation.status != Status.ESCALATED and conversation.operator_id is not None:
             return None
 
         previous_operator_id = conversation.operator_id
@@ -258,9 +262,21 @@ class ConversationRepository:
         conversation = await self.get_conversation_by_id(conversation_id)
         if conversation is None:
             return None
+        
+        # Проверяем, что диалог в статусе WAITING_FOR_OPERATOR и назначен оператору
+        if conversation.status != Status.WAITING_FOR_OPERATOR or conversation.operator_id is None:
+            return None
+        
+        # Проверяем, что последнее сообщение в диалоге было от оператора
+        last_message = (await self.session.execute(
+            select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if last_message is None or last_message.sender_type != "operator":
+            return None
 
         old_status = conversation.status
         conversation.status = Status.OPEN
+        conversation.operator_id = None
         await self._create_audit_log(
             conversation_id=conversation.id,
             action="back_to_ai",

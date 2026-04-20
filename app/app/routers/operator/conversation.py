@@ -1,6 +1,6 @@
 """Роутер для работы операторов с диалогами."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
@@ -10,7 +10,7 @@ from app.core.dependencies import (
     get_llm_service
 )
 
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
 from app.services.llm_service import LLMService
@@ -33,7 +33,7 @@ async def get_conversation_queue(
 ):
     """Получить список диалогов в очереди."""
     
-    if current_user.role != "operator":
+    if current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён: требуется роль оператора.",
@@ -61,7 +61,7 @@ async def assign_conversation(
 ):
     """Назначить диалог оператору."""
     
-    if current_user.role != "operator":
+    if current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён: требуется роль оператора.",
@@ -95,13 +95,13 @@ async def assign_conversation(
 @router.post("/reply/{conversation_id}", status_code=status.HTTP_200_OK, summary="Ответить в диалоге")
 async def reply_to_conversation(
     conversation_id: int,
-    message: str,
+    message: str = Body(..., embed=True, description="Текст сообщения от оператора"),
     current_user: User = Depends(get_current_user),
     message_service: MessageService = Depends(get_message_service)
 ):
     """Ответить в диалоге."""
     
-    if current_user.role != "operator":
+    if current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён: требуется роль оператора.",
@@ -145,7 +145,7 @@ async def close_conversation(
 ):
     """Закрыть диалог."""
     
-    if current_user.role != "operator":
+    if current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён: требуется роль оператора.",
@@ -184,7 +184,7 @@ async def back_to_ai(
 ):
     """Вернуть диалог в очередь ИИ."""
     
-    if current_user.role != "operator":
+    if current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён: требуется роль оператора.",
@@ -201,7 +201,7 @@ async def back_to_ai(
             )
         
         logger.info(f"Оператор {current_user.id} вернул диалог {conversation_id} в очередь ИИ.")
-        return {"detail": "Диалог успешно возвращен в очередь ИИ."}
+        return {"id": result.id, "status": result.status.value}
     
     except HTTPException:
         logger.warning(f"Оператор {current_user.id} не смог вернуть диалог {conversation_id} в очередь ИИ из-за ошибки HTTP.")
