@@ -1,12 +1,14 @@
 """Задачи для фоновой работы с LLM."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
 from app.core.config import settings
 from app.celery.celery_app import celery_app
+from app.db import async_session
+from app.repositories.llm_repo import LLMRepository
+from app.services.conversation_service import ConversationService
 from app.services.llm_service import LLMService
 from app.services.message_service import MessageService
-from app.services.conversation_service import ConversationService
 from app.models.conversation import Status
 from app.schemas.llm import LLMResponse
 
@@ -15,23 +17,29 @@ from app.schemas.llm import LLMResponse
 def process_llm_task(
     self,
     conversation_id: int,
-    llm_service: LLMService,
-    session: AsyncSession,
-    message_service: MessageService,
-    conversation_service: ConversationService
     ) -> str:
     """Обработка задачи LLM с повторными попытками при неудаче."""
-    
+
     try:
-        response: LLMResponse = llm_service.generate_response(conversation_id, session)
-        
-        confidence = response.confidence if hasattr(response, 'confidence') else 0
-        
-        # Проверяем уровень доверия и сохраняем ответ в базу данных
+        asyncio.run(_process_llm_task_async(conversation_id))
+    except Exception as exc:
+        raise self.retry(exc=exc)
+
+    return "ok"
+
+
+async def _process_llm_task_async(conversation_id: int) -> None:
+    """Асинхронная обработка LLM-задачи с инициализацией зависимостей внутри Celery."""
+    async with async_session() as session:
+        llm_service = LLMService(LLMRepository())
+        message_service = MessageService(session)
+        conversation_service = ConversationService(session)
+
+        response: LLMResponse = await llm_service.generate_response(conversation_id, session)
+        confidence = response.confidence if hasattr(response, "confidence") else 0
+
         if confidence >= settings.LLM_AI_CONFIDENCE_THRESHOLD:
-        
-            # Сохранение ответа в базу данных
-            message_service.create_message(
+            await message_service.create_message(
                 conversation_id=conversation_id,
                 sender_type="ai",
                 sender_id=None,
@@ -40,13 +48,9 @@ def process_llm_task(
                 confidence=confidence,
                 needs_review=False,
             )
-            
-        else:
-            # Эскадируем диалог для ручной обработки, если доверие низкое
-            conversation_service.update_conversation_status(
-                conversation_id=conversation_id,
-                new_status=Status.ESCALATED,
-            )
-            
-    except Exception as exc:
-        raise self.retry(exc=exc)
+            return
+
+        await conversation_service.update_conversation_status(
+            conversation_id=conversation_id,
+            new_status=Status.ESCALATED,
+        )
