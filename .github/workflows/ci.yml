@@ -27,11 +27,44 @@ jobs:
       - name: Run Redis
         uses: redis/redis-stack-action@v1
 
+      - name: Start Celery worker
+        env:
+          PYTHONPATH: .
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+        run: |
+          nohup celery -A app.celery.celery_app:celery_app worker --loglevel=info --pool=solo > /tmp/celery.log 2>&1 &
+
+      - name: Wait for Celery readiness
+        env:
+          PYTHONPATH: .
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+        run: |
+          python - <<'PY'
+          import time
+          from app.celery.celery_app import celery_app
+
+          for _ in range(30):
+              try:
+                  ping = celery_app.control.inspect(timeout=1.0).ping()
+                  if ping:
+                      print("Celery worker is ready")
+                      break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              raise SystemExit("Celery worker did not become ready in time")
+          PY
+
       - name: Run tests with coverage
         env:
           DATABASE_URL: sqlite+aiosqlite:///./app.db
           JWT_SECRET_KEY: test-secret-key
           PYTHONPATH: .
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=pytest-report.xml
 
@@ -43,6 +76,7 @@ jobs:
           path: |
             app/coverage.xml
             app/pytest-report.xml
+            /tmp/celery.log
 
       - name: Coverage summary
         if: always()
