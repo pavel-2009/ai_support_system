@@ -13,6 +13,7 @@ from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
 from app.services.user_service import UserService
 from app.services.llm_service import LLMService
+from app.repositories.llm_repo import LLMRepository
 
 logger = get_logger(__name__)
 
@@ -83,7 +84,9 @@ async def get_message_service(
 
 async def get_llm_service() -> LLMService:
     """Зависимость для получения сервиса работы с LLM."""
-    return LLMService()
+    # Instantiate repository with configured defaults and inject into service
+    llm_repo = LLMRepository()
+    return LLMService(llm_repo)
 
 
 def ensure_conversation_access(current_user: User, conversation: Conversation) -> None:

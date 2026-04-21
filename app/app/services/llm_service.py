@@ -2,7 +2,8 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories.llm_repo import LLMRepository
+from ..repositories.llm_repo import LLMRepository
+from ..schemas.llm import LLMResponse
 
 
 class LLMService:
@@ -11,7 +12,7 @@ class LLMService:
     def __init__(self, llm_repo: LLMRepository):
         self.llm_repo = llm_repo
 
-    def generate_response(self, conversation_id: int, session: AsyncSession) -> str:
+    async def generate_response(self, conversation_id: int, session: AsyncSession) -> LLMResponse:
         """Генерирует ответ на заданный вопрос с помощью LLM модели."""
         
-        return self.llm_repo.get_llm_response(conversation_id, session)
+        return await self.llm_repo.get_llm_response(conversation_id, session)

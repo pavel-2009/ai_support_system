@@ -2,18 +2,19 @@
 
 from typing import List
 from openai import OpenAI
-import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import asyncio
+import inspect
 
 import json
 
-from app.core.config import settings
-from app.core.exceptions import LLMResponseFailed
+from ..core.config import settings
+from ..core.exceptions import LLMResponseFailed
 
-from app.schemas.llm import LLMResponse
-from app.models.message import Message
+from ..schemas.llm import LLMResponse
+from ..models.message import Message
 
 
 class LLMRepository:
@@ -25,14 +26,18 @@ class LLMRepository:
         model: str = settings.LLM_MODEL,
         ):
         
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
         self.model = model
 
-    def _generate_response(self, conversation_id: int, session: AsyncSession) -> LLMResponse:
+    async def _generate_response(self, conversation_id: int, session: AsyncSession) -> LLMResponse:
         """Генерирует ответ на заданный вопрос с помощью LLM модели."""
+        messages = await self._generate_prompt(conversation_id, session)
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": self._generate_prompt(conversation_id, session)}],
+            messages=messages,
             max_tokens=settings.LLM_TOKEN_LIMIT,
             temperature=settings.LLM_TEMPERATURE,
             timeout=settings.LLM_TIMEOUT,
@@ -75,7 +80,7 @@ class LLMRepository:
         return f"You are a helpful assistant. The last message from the user was: '{last_message}'"
     
     
-    def _generate_prompt(
+    async def _generate_prompt(
         self,
         conversation_id: int,
         session: AsyncSession
@@ -83,7 +88,12 @@ class LLMRepository:
         """Генерирует промпт для LLM модели на основе истории разговора."""
         
         # Получаем историю сообщений для данного conversation_id
-        result = asyncio.run(session.execute(select(Message).where(Message.conversation_id == conversation_id)))
+        exec_result = session.execute(select(Message).where(Message.conversation_id == conversation_id))
+        if inspect.isawaitable(exec_result):
+            result = await exec_result
+        else:
+            result = exec_result
+
         last_messages: List[Message] = sorted(result.scalars().all(), key=lambda x: x.created_at, reverse=True)[:5]  # Берем последние 5 сообщений
         
         conversation_history = [msg.content for msg in last_messages]
@@ -92,7 +102,7 @@ class LLMRepository:
         
         
     # Основной метод для получения ответа от LLM модели
-    def get_llm_response(
+    async def get_llm_response(
         self,
         conversation_id: int,
         session: AsyncSession
@@ -101,7 +111,8 @@ class LLMRepository:
         last_error: Exception | None = None
         for _ in range(settings.LLM_RETRY_ATTEMPTS):
             try:
-                return self._generate_response(conversation_id, session)
+                await asyncio.sleep(10)
+                return await self._generate_response(conversation_id, session)
             except Exception as e:
                 last_error = e
                 print(f"LLM response generation failed: {str(e)}. Retrying...") # print пока заглушка для логирования

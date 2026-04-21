@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # === AI ===
-    LLM_API_KEY: str = "your-llm-api-key"
-    LLM_MODEL: str = "gpt-4o"
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "qwen/qwen3-coder:free"
     LLM_RETRY_ATTEMPTS: int = 5
-    LLM_TIMEOUT: int = 10  # seconds
+    LLM_TIMEOUT: int = 20  # seconds
     LLM_TEMPERATURE: float = 0.7
     LLM_AI_CONFIDENCE_THRESHOLD: float = 0.8
     LLM_TOKEN_LIMIT: int = 4096
