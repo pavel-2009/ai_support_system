@@ -24,6 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Run Redis
+        uses: redis/redis-stack-action@v1
+
       - name: Run tests with coverage
         env:
           DATABASE_URL: sqlite+aiosqlite:///./app.db
