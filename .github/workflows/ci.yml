@@ -3,10 +3,25 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      # Redis is started as a native service container to avoid external action dependencies.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
     defaults:
       run:
         working-directory: app
@@ -24,8 +39,51 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run Redis
-        uses: redis/redis-stack-action@v1
+      - name: Wait for Redis readiness
+        run: |
+          python - <<'PY'
+          import time
+          import redis
+
+          client = redis.Redis.from_url("redis://localhost:6379/0", socket_connect_timeout=1)
+          for _ in range(30):
+              try:
+                  if client.ping():
+                      print("Redis is ready")
+                      break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              raise SystemExit("Redis did not become ready in time")
+          PY
+
+      - name: Start Celery worker
+        env:
+          PYTHONPATH: .
+        run: |
+          nohup celery -A app.celery.celery_app:celery_app worker --loglevel=info --pool=solo > /tmp/celery.log 2>&1 &
+
+      - name: Wait for Celery readiness
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import time
+          from app.celery.celery_app import celery_app
+
+          for _ in range(30):
+              try:
+                  ping = celery_app.control.inspect(timeout=1.0).ping()
+                  if ping:
+                      print("Celery worker is ready")
+                      break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              raise SystemExit("Celery worker did not become ready in time")
+          PY
 
       - name: Run tests with coverage
         env:
@@ -43,6 +101,7 @@ jobs:
           path: |
             app/coverage.xml
             app/pytest-report.xml
+            /tmp/celery.log
 
       - name: Coverage summary
         if: always()
