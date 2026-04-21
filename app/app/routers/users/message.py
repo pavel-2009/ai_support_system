@@ -1,15 +1,11 @@
 """Пользовательский роутер для работы с сообщениями."""
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
     get_message_service,
     get_open_conversation_for_user,
     require_authenticated_user,
-    get_llm_service,
-    get_async_session,
-    get_conversation_service,
 )
 from app.core.logging import get_logger
 from app.models.conversation import Conversation
@@ -18,8 +14,6 @@ from app.models.user import User
 from app.schemas.message import MessageCreate, MessageGet
 from app.services.message_service import MessageService
 from app.celery.tasks.llm_tasks import process_llm_task
-from app.services.llm_service import LLMService
-from app.services.conversation_service import ConversationService
 
 router = APIRouter(
     prefix="/conversations",
@@ -39,9 +33,6 @@ async def send_message(
     conversation: Conversation = Depends(get_open_conversation_for_user),
     current_user: User = Depends(require_authenticated_user),
     message_service: MessageService = Depends(get_message_service),
-    llm_service: LLMService = Depends(get_llm_service),
-    session: AsyncSession = Depends(get_async_session),
-    conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> MessageGet:
     """Отправить новое сообщение в беседе."""
     logger.info(
@@ -56,14 +47,16 @@ async def send_message(
         content=message.content,
         is_auto_reply=False,
     )
-    
-    process_llm_task.delay(
-        conversation_id=conversation.id,
-        llm_service=llm_service,
-        session=session,
-        message_service=message_service,
-        conversation_service=conversation_service
-    )
+
+    try:
+        process_llm_task.delay(
+            conversation_id=conversation.id,
+        )
+    except Exception:
+        logger.exception(
+            "Не удалось поставить LLM-задачу в очередь для диалога %s.",
+            conversation.id,
+        )
 
     return new_message
 
