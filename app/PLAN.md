@@ -1,206 +1,137 @@
-# PLAN — AI Support System (актуализация на 20 апреля 2025)
+# PLAN — AI Support System (актуализация на 21 апреля 2026)
 
 ## 1) Текущий статус проекта
 
-Проект находится на этапе **стабильного MVP с реализованным operator workflow и базовой AI-интеграцией**.
+Проект находится на этапе **расширенного MVP**: базовый продукт стабилен, operator workflow реализован, Celery/LLM интегрированы, CI покрывает unit+e2e тесты и теперь запускает отдельный Celery worker для корректной проверки фоновой инфраструктуры.
 
-Ключевые обновления текущего состояния:
-- CI вынесен в корневой `.github/workflows/ci.yml`, workflow запускается корректно.
-- CI адаптирован под фактическую структуру репозитория (рабочая директория `app/`, корректные пути к артефактам).
-- `/api/auth/login` поддерживает и JSON-логин (email/password), и OAuth2 form-login (username/password) для Swagger.
+Ключевые факты по текущему состоянию:
+- CI в `.github/workflows/ci.yml` запускается из корня репозитория с рабочей директорией `app/`.
+- В CI поднимаются Redis и Celery worker (broker/result backend: `redis://localhost:6379/0`), добавлена проверка готовности Celery перед запуском тестов.
+- `/api/auth/login` поддерживает JSON и OAuth2 form сценарии.
 - Реализован полный operator workflow: assign/reply/close/back_to_ai.
-- Интегрирована Celery для фоновой обработки LLM-запросов.
-- Реализован LLM adapter с OpenAI и retry-логикой.
-- Все тесты проходят: **86/86 passed**.
+- Реализована базовая LLM-интеграция и Celery-задача `process_llm_task`.
+- Health endpoint проверяет database/redis/celery.
 
-### Процент готовности
-
-- **Оценка выполненной работы: ~90%**.
-- **Оставшийся объём: ~10%**.
+### Оценка готовности
+- **Текущая оценка: ~90%**.
+- **Остаток до production-ready: ~10%**.
 
 ---
 
-## 2) Что уже сделано (Done)
+## 2) Что реализовано (Done)
 
 ### 2.1 Foundation
-- [x] Базовый FastAPI app + health-check.
-- [x] Разделение на слои `core`, `routers`, `services`, `repositories`, `schemas`, `models`.
+- [x] FastAPI приложение и health-check endpoint.
+- [x] Слоистая архитектура: `core`, `routers`, `services`, `repositories`, `schemas`, `models`.
+- [x] Конфигурация через `pydantic-settings`.
 - [x] Централизованное логирование.
-- [x] Конфигурация через pydantic-settings (.env support).
 
-### 2.2 Данные
-- [x] Модели: `users`, `conversations`, `messages`.
-- [x] Модели: `audit_logs`, `conversation_operator_links`.
-- [x] Alembic миграции настроены.
-- [x] SQLite (aiosqlite) для разработки/тестирования.
+### 2.2 Data layer
+- [x] ORM модели: users, conversations, messages.
+- [x] ORM модели: audit_logs, conversation_operator_links.
+- [x] Alembic миграции.
+- [x] SQLite (dev/test).
 
-### 2.3 Auth и доступ
-- [x] JWT access/refresh tokens.
-- [x] Ролевая модель: USER, OPERATOR, ADMIN.
-- [x] Ролевая изоляция на всех эндпоинтах.
-- [x] Совместимый логин для API-клиентов и Swagger (JSON + OAuth2 form).
-- [x] Dependency injection для сервисов и репозиториев.
+### 2.3 Auth & Access
+- [x] JWT access/refresh.
+- [x] Роли USER/OPERATOR/ADMIN.
+- [x] Разграничение доступа на эндпоинтах.
+- [x] Login для API-клиентов и Swagger (JSON + form).
 
-### 2.4 Conversation API (user)
-- [x] `POST /api/conversations/` — создать диалог.
-- [x] `GET /api/conversations/{id}` — получить диалог (с `410` для closed).
-- [x] `GET /api/conversations/{id}/messages` — получить сообщения.
-- [x] `POST /api/conversations/{id}/messages` — отправить сообщение.
-- [x] `GET /api/conversations/queue/active` — активная очередь (admin/operator).
-- [x] `GET /api/conversations` — список с фильтрами + пагинация.
-- [x] `POST /api/conversations/{id}/close` — закрыть диалог (user).
-- [x] Проверки изоляции: пользователь видит только свои диалоги.
+### 2.4 User Conversation API
+- [x] Создание диалогов.
+- [x] Получение диалога/истории сообщений.
+- [x] Отправка сообщений в диалог.
+- [x] Закрытие диалога пользователем.
+- [x] Списки и очередь активных диалогов для роли operator/admin.
 
-### 2.5 Operator workflow (полный)
-- [x] `GET /api/operator/queue` — список диалогов в очереди.
-- [x] `POST /api/operator/assign/{conversation_id}` — назначить диалог оператору.
-- [x] `POST /api/operator/reply/{conversation_id}` — ответить в диалоге.
-- [x] `POST /api/operator/close/{conversation_id}` — закрыть диалог.
-- [x] `POST /api/operator/back_to_ai/{conversation_id}` — вернуть диалог в очередь ИИ.
-- [x] Проверка ролей: только OPERATOR/ADMIN.
-- [x] История назначений через `ConversationOperatorLink`.
+### 2.5 Operator workflow
+- [x] Queue endpoint для операторов.
+- [x] Assign диалога оператору.
+- [x] Reply оператора в диалог.
+- [x] Close диалога оператором.
+- [x] Возврат диалога в AI (`back_to_ai`).
+- [x] История назначений (`ConversationOperatorLink`).
 
-### 2.6 AI integration
-- [x] LLMService + LLMRepository с OpenAI client.
-- [x] Схема валидации LLMResponse (answer, confidence, topic).
-- [x] Retry-логика при ошибках LLM.
-- [x] Celery задача `process_llm_task` для фоновой обработки.
-- [x] Генерация промптов с историей сообщений (последние 5).
-- [x] Confidence-based routing (настроено в config).
+### 2.6 AI / Celery integration
+- [x] `LLMService` + `LLMRepository` с retry.
+- [x] Celery app и задача `process_llm_task`.
+- [x] Подготовка контекста (последние сообщения) для LLM.
+- [x] Базовый confidence-based routing в сервисной логике.
 
-### 2.7 CI/CD и качество
+### 2.7 CI/CD и тестирование
 - [x] CI workflow в корне репозитория.
-- [x] Сбор артефактов `coverage.xml` и `pytest-report.xml`.
-- [x] Покрытие тестами: unit + e2e.
-- [x] Все тесты зелёные (`86 passed`).
-
-### 2.8 Health & Observability
-- [x] `/health` endpoint с проверкой database, redis, celery.
-- [x] AuditLog модель для трекинга действий.
-- [x] Структурированное логирование.
+- [x] Запуск тестов с coverage + junit отчетом.
+- [x] Публикация `coverage.xml` и `pytest-report.xml` как артефактов.
+- [x] **Добавлен корректный запуск Celery worker в CI + readiness check перед тестами.**
 
 ---
 
-## 3) Что не реализовано (Gap к production-ready)
+## 3) Gap до ТЗ (что ещё нужно)
 
-1. **Production DB**
-   - Нет PostgreSQL (сейчас SQLite для dev/test).
-   - Нет миграций на production.
+1. **Production DB и окружения**
+   - [ ] Переключение на PostgreSQL для production.
+   - [ ] Актуализация миграций под production-процессы.
+   - [ ] Разделение env-конфигов (dev/test/prod).
 
-2. **AI processing (production-hardened)**
-   - Нет полного orchestration-пайплайна после сообщения пользователя.
-   - Нет автоматического триггера LLM-задачи при новом сообщении.
-   - Нет confidence-routing в production-потоке (интеграция pending).
+2. **Полный AI pipeline (по ТЗ)**
+   - [ ] Автотриггер Celery-задачи при `POST /messages`.
+   - [ ] Гарантированная запись AI-ответов в `messages` с `is_auto_reply=true`.
+   - [ ] Явная обработка диапазонов confidence (`>0.85`, `0.6–0.85`, `<0.6`) с `needs_review`.
+   - [ ] Полная эскалация в статус `escalated` + audit событие в одном транзакционном сценарии.
 
-3. **Observability / эксплуатация**
-   - Нет метрик Prometheus endpoint.
-   - Нет readiness/liveness probe для K8s.
-   - Нет дашбордов/алертинга.
-   - Нет WebSocket уведомлений для операторов.
+3. **State machine hardening**
+   - [ ] Централизованный transition-layer для статусов.
+   - [ ] Явная валидация допустимых переходов.
+   - [ ] Полный audit trail по сменам статусов.
 
-4. **Дополнительные функции**
-   - Нет лимита активных диалогов на оператора.
-   - Нет cron-задач для авто-закрытия неактивных диалогов.
-   - Нет экспорта диалогов (JSON/CSV).
-   - Нет системы шаблонов ответов.
+4. **Observability и эксплуатация**
+   - [ ] Prometheus metrics endpoint.
+   - [ ] Readiness/liveness в формате production-deploy.
+   - [ ] Runbook/операционные инструкции.
 
----
-
-## 4) Обновлённый план до production-ready
-
-## Этап A —已完成 (Conversation API + Operator workflow)
-- [x] Полный CRUD для conversations/messages.
-- [x] Operator workflow: assign/reply/close/back_to_ai.
-- [x] Ролевая изоляция и проверки прав.
-
-## Этап B — AI pipeline integration (1–2 дня)
-- [ ] Автоматический триггер Celery-задачи при POST /messages.
-- [ ] Сохранение AI-ответа в messages (is_auto_reply=true).
-- [ ] Обновление статуса диалога на основе confidence.
-- [ ] Эскалация при low confidence (< threshold).
-
-## Этап C — State machine hardening (1 день)
-- [ ] Централизовать переходы статусов (единый transition слой).
-- [ ] Явно валидировать допустимые переходы.
-- [ ] Audit log при каждом переходе статуса.
-
-## Этап D — Production DB & deployment (1–2 дня)
-- [ ] Docker-compose с PostgreSQL + Redis.
-- [ ] Миграции Alembic для production.
-- [ ] Environment-specific конфиги (.env.prod).
-
-## Этап E — Observability + polishing (1–2 дня)
-- [ ] Prometheus metrics endpoint.
-- [ ] Health check readiness/liveness.
-- [ ] Runbook/README polishing.
-- [ ] Базовые smoke/e2e проверки full AI-flow в CI.
+5. **Фичи из ТЗ, ещё не закрытые**
+   - [ ] Лимит активных диалогов на оператора (до 5).
+   - [ ] Auto-close по неактивности (3 часа) через scheduler/cron.
+   - [ ] Уведомления операторов (опционально WebSocket/event-driven).
 
 ---
 
-## 5) Остаточная оценка сроков
+## 4) План работ (обновлённый)
 
-- **Осталось: 3–5 рабочих дней**.
-- **Оптимистично:** 3 дня.
-- **Реалистично:** 4–5 дней.
+### Этап A — Stabilization (завершён)
+- [x] Базовая архитектура и основные API.
+- [x] Operator workflow.
+- [x] CI с корректным запуском Redis/Celery для тестов.
+
+### Этап B — Full AI flow (в работе)
+- [ ] Trigger Celery из пользовательского message endpoint.
+- [ ] Persist AI message + confidence/needs_review.
+- [ ] Эскалация по low confidence в operator queue.
+
+### Этап C — State machine + audit (план)
+- [ ] Единый модуль transitions.
+- [ ] Строгие правила смены состояний.
+- [ ] Полный аудит изменений статусов/назначений.
+
+### Этап D — Production readiness (план)
+- [ ] PostgreSQL и production-конфигурация.
+- [ ] Метрики и эксплуатационные проверки.
+- [ ] Smoke/e2e сценарии полного AI-контура в CI.
 
 ---
 
-## 6) Критерий завершения текущего checkpoint
+## 5) Прогноз сроков
 
-Checkpoint «operator workflow + AI integration» считается завершённым:
-- [x] CI расположен и работает из корня репозитория.
-- [x] Локально проект проходит тесты (86 passed).
-- [x] Логин совместим с текущими тестами и Swagger.
-- [x] Operator workflow полностью реализован (assign/reply/close/back_to_ai).
-- [x] LLM service + repository интегрированы с OpenAI.
-- [x] Celery настроен для фоновых задач.
-
-**Checkpoint status: завершён, следующий фокус — AI pipeline automation + state machine hardening + production deployment.**
+- **Осталось: 3–5 рабочих дней** при фокусе на backend.
+- Критический путь: Full AI flow → state machine hardening → production infra.
 
 ---
 
-## 7) Архитектурные заметки
+## 6) Критерии завершения ближайшего checkpoint
 
-### Слои приложения
-```
-app/
-├── main.py              # Точка входа, регистрация роутеров
-├── db.py                # SQLAlchemy engine, session factory
-├── services_init.py     # Глобальная инициализация сервисов
-├── core/
-│   ├── config.py        # Pydantic settings
-│   ├── security.py      # JWT, password hashing
-│   ├── dependencies.py  # FastAPI Depends
-│   ├── logging.py       # Конфигурация логов
-│   └── exceptions.py    # Кастомные исключения
-├── models/              # SQLAlchemy ORM модели
-├── schemas/             # Pydantic схемы
-├── repositories/        # Data access layer
-├── services/            # Business logic layer
-├── routers/
-│   ├── users/           # User auth, conversations, messages
-│   └── operator/        # Operator workflow
-├── celery/
-│   ├── celery_app.py    # Celery конфигурация
-│   └── tasks/
-│       └── llm_tasks.py # LLM фоновые задачи
-└── tests/
-    ├── unit/            # Unit тесты
-    └── e2e/             # End-to-end тесты
-```
-
-### Статусы диалогов (State Machine)
-```
-open → waiting_for_user → open (цикл)
-open → escalated (при low confidence AI)
-escalated → waiting_for_operator (assign)
-waiting_for_operator → waiting_for_user (reply)
-waiting_for_user → closed (timeout или user close)
-any → back_to_ai (operator decision)
-```
-
-### Ключевые конфигурации
-- `LLM_AI_CONFIDENCE_THRESHOLD`: 0.8 (порог для auto-answer)
-- `LLM_RETRY_ATTEMPTS`: 5
-- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: 30
-- `JWT_REFRESH_TOKEN_EXPIRE_DAYS`: 7
+Checkpoint «Full AI flow» считается завершённым, когда:
+- [ ] Каждое пользовательское сообщение асинхронно обрабатывается Celery автоматически.
+- [ ] AI-ответ и confidence стабильно сохраняются в БД.
+- [ ] При `confidence < 0.6` диалог гарантированно эскалируется оператору.
+- [ ] Все проверки проходят в CI (включая инфраструктурную проверку Celery worker readiness).
