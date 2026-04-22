@@ -20,7 +20,7 @@ class MessageService:
         sender_id: int,
         content: str,
         is_auto_reply: bool = False,
-        confidence: float = None,
+        confidence: float | None = None,
         needs_review: bool = False
     ):
         """Создать новое сообщение."""

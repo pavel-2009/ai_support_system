@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation, Status
 from app.models.message import Message
+from app.models.user import UserRole
 
 
 class MessageRepository:
@@ -26,6 +27,16 @@ class MessageRepository:
     ) -> Message:
         """Создать новое сообщение."""
         
+        conversation = (
+            await self.session.execute(select(Conversation).where(Conversation.id == conversation_id))
+        ).scalar_one_or_none()
+        if conversation is None:
+            return None
+
+        if sender_type == UserRole.OPERATOR.value:
+            if conversation.operator_id != sender_id or conversation.status != Status.WAITING_FOR_OPERATOR:
+                return None
+
         new_message = Message(
             conversation_id=conversation_id,
             sender_type=sender_type,
@@ -33,7 +44,7 @@ class MessageRepository:
             content=content,
             is_auto_reply=is_auto_reply,
             confidence=confidence,
-            needs_review=needs_review
+            needs_review=needs_review,
         )
         self.session.add(new_message)
         await self.session.commit()

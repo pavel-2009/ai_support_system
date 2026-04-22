@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.conversation import (
     AuditLog,
     Channel,
@@ -14,6 +15,7 @@ from app.models.conversation import (
     Status,
 )
 from app.models.message import Message
+from app.models.user import User
 
 
 class ConversationRepository:
@@ -194,11 +196,28 @@ class ConversationRepository:
         if conversation.status != Status.ESCALATED and conversation.operator_id is not None:
             return None
 
+        operator = (
+            await self.session.execute(select(User).where(User.id == operator_id))
+        ).scalar_one_or_none()
+        if operator is None:
+            return None
+        if operator.active_conversations_count >= settings.MAX_OPERATOR_ACTIVE_CONVERSATIONS:
+            return None
+
         previous_operator_id = conversation.operator_id
         previous_status = conversation.status
 
         conversation.operator_id = operator_id
         conversation.status = Status.WAITING_FOR_OPERATOR
+
+        if previous_operator_id is not None and previous_operator_id != operator_id:
+            previous_operator = (
+                await self.session.execute(select(User).where(User.id == previous_operator_id))
+            ).scalar_one_or_none()
+            if previous_operator is not None and previous_operator.active_conversations_count > 0:
+                previous_operator.active_conversations_count -= 1
+
+        operator.active_conversations_count += 1
         active_links = (
             await self.session.execute(
                 select(ConversationOperatorLink).where(
@@ -243,8 +262,16 @@ class ConversationRepository:
             return None
 
         old_status = conversation.status
+        current_operator_id = conversation.operator_id
         conversation.status = Status.CLOSED
         conversation.closed_at = datetime.utcnow()
+
+        if current_operator_id is not None:
+            operator = (
+                await self.session.execute(select(User).where(User.id == current_operator_id))
+            ).scalar_one_or_none()
+            if operator is not None and operator.active_conversations_count > 0:
+                operator.active_conversations_count -= 1
         await self._create_audit_log(
             conversation_id=conversation.id,
             action="conversation_closed",
@@ -275,8 +302,16 @@ class ConversationRepository:
             return None
 
         old_status = conversation.status
+        current_operator_id = conversation.operator_id
         conversation.status = Status.OPEN
         conversation.operator_id = None
+
+        if current_operator_id is not None:
+            operator = (
+                await self.session.execute(select(User).where(User.id == current_operator_id))
+            ).scalar_one_or_none()
+            if operator is not None and operator.active_conversations_count > 0:
+                operator.active_conversations_count -= 1
         await self._create_audit_log(
             conversation_id=conversation.id,
             action="back_to_ai",

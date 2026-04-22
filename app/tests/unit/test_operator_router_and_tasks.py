@@ -65,6 +65,21 @@ class TestOperatorRouter:
         assert exc.value.status_code == 500
 
     @pytest.mark.asyncio
+    async def test_reply_to_conversation_returns_404_when_not_assigned(self):
+        user = SimpleNamespace(id=3, role=UserRole.OPERATOR)
+        message_service = SimpleNamespace(create_message=AsyncMock(return_value=None))
+
+        with pytest.raises(HTTPException) as exc:
+            await operator_router.reply_to_conversation(
+                12,
+                message="Ответ оператора",
+                current_user=user,
+                message_service=message_service,
+            )
+
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
     async def test_reply_to_conversation_success(self):
         user = SimpleNamespace(id=3, role=UserRole.OPERATOR)
         message_service = SimpleNamespace(
