@@ -25,7 +25,7 @@ class MessageService:
     ):
         """Создать новое сообщение."""
         
-        await self.message_repo.create_message(
+        new_message = await self.message_repo.create_message(
             conversation_id=conversation_id,
             sender_type=sender_type,
             sender_id=sender_id,
@@ -38,6 +38,8 @@ class MessageService:
         # Если нужно ревью - отмечаем диалог
         if needs_review:
             await self.message_repo.mark_conversation_for_review(conversation_id)
+
+        return new_message
 
 
     async def get_messages_by_conversation(self, conversation_id: int):
