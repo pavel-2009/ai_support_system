@@ -83,3 +83,6 @@ class ConversationService:
     
     async def back_to_ai(self, conversation_id: int) -> Conversation | None:
         return await self.conversation_repo.back_to_ai(conversation_id)
+        
+    async def mark_conversation_for_review(self, conversation_id: int) -> Conversation | None:
+        return await self.conversation_repo.mark_conversation_for_review(conversation_id)   

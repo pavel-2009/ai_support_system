@@ -49,6 +49,18 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                 needs_review=False,
             )
             return
+        
+        elif confidence >= settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD:
+            await message_service.create_message(
+                conversation_id=conversation_id,
+                sender_type="ai",
+                sender_id=None,
+                content=response.answer,
+                is_auto_reply=True,
+                confidence=confidence,
+                needs_review=True,
+            )
+            return
 
         await conversation_service.update_conversation_status(
             conversation_id=conversation_id,

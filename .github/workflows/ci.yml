@@ -22,6 +22,7 @@ jobs:
     env:
       CELERY_BROKER_URL: redis://localhost:6379/0
       CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      CI: true
     defaults:
       run:
         working-directory: app

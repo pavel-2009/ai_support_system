@@ -1,6 +1,10 @@
 """Базовая конфигурация приложения."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -17,7 +21,11 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     
     # === Database ===
-    DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
+    # Если тесты запускаются в CI, используем SQLite, иначе - PostgreSQL. Это позволяет избежать проблем с настройкой PostgreSQL в CI среде.
+    if os.getenv("CI") == "true":
+        DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
+    else:
+        DATABASE_URL: str = "postgresql+asyncpg://postgres:password@db:5432/mydatabase"
 
     # === JWT ===
     JWT_SECRET_KEY: str = "change-me-to-a-long-random-secret-key-with-at-least-32-bytes"
@@ -32,6 +40,7 @@ class Settings(BaseSettings):
     LLM_TIMEOUT: int = 20  # seconds
     LLM_TEMPERATURE: float = 0.7
     LLM_AI_CONFIDENCE_THRESHOLD: float = 0.8
+    LLM_ESCALATION_CONFIDENCE_THRESHOLD: float = 0.65
     LLM_TOKEN_LIMIT: int = 4096
     
     # === Celery ===

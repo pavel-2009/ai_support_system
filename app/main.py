@@ -1,7 +1,6 @@
 """Точка входа в приложение FastAPI."""
 
 from fastapi import Depends, FastAPI
-from fastapi.openapi.utils import get_openapi
 from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
