@@ -1,8 +1,9 @@
 """Репозиторий для работы с сообщениями."""
 
-from sqlalchemy import select, insert
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.conversation import Conversation, Status
 from app.models.message import Message
 
 
@@ -47,3 +48,18 @@ class MessageRepository:
         
         result = await self.session.execute(select(Message).where(Message.conversation_id == conversation_id))
         return result.scalars().all()
+
+    async def mark_conversation_for_review(self, conversation_id: int) -> Conversation | None:
+        """Пометить диалог на ревью оператором, эскалируя его статус."""
+
+        result = await self.session.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if conversation is None:
+            return None
+
+        conversation.status = Status.ESCALATED
+        await self.session.commit()
+        await self.session.refresh(conversation)
+        return conversation
