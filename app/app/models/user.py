@@ -27,6 +27,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(SqlEnum(UserRole), default=UserRole.USER, nullable=False)
+    active_conversations_count = Column(Integer, nullable=False, default=0)
 
     conversations = relationship(
         "Conversation",
