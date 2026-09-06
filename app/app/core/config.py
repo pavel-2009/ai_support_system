@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     if os.getenv("CI") == "true":
         DATABASE_URL: str = "sqlite+aiosqlite:///./app.db"
     else:
-        DATABASE_URL: str = "postgresql+asyncpg://postgres:password@db:5432/mydatabase"
+        DATABASE_URL: str = "postgresql+asyncpg://postgres:password@postgres:5432/mydatabase"
 
     # === JWT ===
     JWT_SECRET_KEY: str = "change-me-to-a-long-random-secret-key-with-at-least-32-bytes"

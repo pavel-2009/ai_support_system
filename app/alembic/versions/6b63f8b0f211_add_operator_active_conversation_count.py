@@ -19,11 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column("active_conversations_count", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.alter_column("users", "active_conversations_count", server_default=None)
+    bind = op.get_bind()
+    users_columns = {column["name"] for column in sa.inspect(bind).get_columns("users")}
+    if "active_conversations_count" not in users_columns:
+        op.add_column(
+            "users",
+            sa.Column("active_conversations_count", sa.Integer(), nullable=False, server_default="0"),
+        )
+
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.alter_column("active_conversations_count", server_default=None)
 
 
 def downgrade() -> None:

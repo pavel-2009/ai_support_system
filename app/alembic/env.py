@@ -7,6 +7,7 @@ import asyncio
 from alembic import context
 
 from app.db import Base
+from app.core.config import settings
 from app.models.user import User, UserRole  # noqa: F401 - импортируем модели для регистрации в метаданных
 from app.models.conversation import (  # noqa: F401 - импортируем модели для регистрации в метаданных
     AuditLog,
@@ -50,7 +51,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -68,8 +69,9 @@ def run_migrations_online() -> None:
 
 async def run_migrations_online_async() -> None:
     """Основная логика миграций для aiosqlite"""
+    database_url = settings.DATABASE_URL
     connectable = create_async_engine(
-        config.get_main_option("sqlalchemy.url"),
+        database_url,
         poolclass=pool.NullPool,
     )
 
