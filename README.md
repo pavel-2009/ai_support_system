@@ -161,6 +161,7 @@ app/
 
 ### LLM
 
+- `LLM_BASE_URL` (по умолчанию `http://localhost:11434/v1`, OpenAI-совместимый endpoint Ollama)
 - `LLM_API_KEY`
 - `LLM_MODEL`
 - `LLM_RETRY_ATTEMPTS`
@@ -169,6 +170,8 @@ app/
 - `LLM_AI_CONFIDENCE_THRESHOLD`
 - `LLM_ESCALATION_CONFIDENCE_THRESHOLD`
 - `LLM_TOKEN_LIMIT`
+
+По умолчанию приложение использует локальную модель Ollama `llama3.2`. Перед запуском установите Ollama и выполните `ollama pull llama3.2`. Для OpenRouter задайте в `.env` `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` и нужную `LLM_MODEL`.
 
 ### Celery / Redis
 

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.core.exceptions import LLMResponseFailed
+from app.core.config import settings
 from app.schemas.llm import LLMResponse
 from app.services.llm_service import LLMService
 from app.repositories.llm_repo import LLMRepository
@@ -50,6 +51,15 @@ class TestLLMService:
 
 
 class TestLLMRepositoryHelpers:
+    @patch("app.repositories.llm_repo.OpenAI")
+    def test_uses_configured_llm_endpoint(self, openai_mock):
+        LLMRepository(api_key="x", model="test-model")
+
+        openai_mock.assert_called_once_with(
+            base_url=settings.LLM_BASE_URL,
+            api_key="x",
+        )
+
     @patch("app.repositories.llm_repo.OpenAI")
     def test_generate_system_prompt_empty_and_with_history(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")

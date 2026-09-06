@@ -1,4 +1,4 @@
-"""Репозиторий для работы с облачной LLM моделью для генерации ответов на вопросы пользователей."""
+"""Репозиторий для работы с LLM-моделью для генерации ответов на вопросы пользователей."""
 
 from typing import List
 from openai import OpenAI
@@ -18,7 +18,7 @@ from ..models.message import Message
 
 
 class LLMRepository:
-    """Репозиторий для работы с облачной LLM моделью для генерации ответов на вопросы пользователей."""
+    """Репозиторий для работы с LLM-моделью через OpenAI-совместимый API."""
 
     def __init__(
         self,
@@ -27,7 +27,7 @@ class LLMRepository:
         ):
         
         self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
+            base_url=settings.LLM_BASE_URL,
             api_key=api_key,
         )
         self.model = model
