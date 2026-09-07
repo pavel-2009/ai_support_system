@@ -50,6 +50,7 @@ class UserRepository:
         for key, value in payload.items():
             setattr(user, key, value)
 
+        await self.session.flush()
         await self.session.refresh(user)
         return user
 

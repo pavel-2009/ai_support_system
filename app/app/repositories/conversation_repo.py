@@ -180,6 +180,7 @@ class ConversationRepository:
             from_status=old_status,
             to_status=new_status,
         )
+        await self.session.flush()
         await self.session.refresh(conversation)
         return conversation
 
@@ -248,6 +249,7 @@ class ConversationRepository:
                 actor_id=previous_operator_id,
                 action="operator_unassigned",
             )
+        await self.session.flush()
         await self.session.refresh(conversation)
         return conversation
 
@@ -275,6 +277,7 @@ class ConversationRepository:
             from_status=old_status,
             to_status=Status.CLOSED,
         )
+        await self.session.flush()
         await self.session.refresh(conversation)
         return conversation
     
@@ -314,5 +317,6 @@ class ConversationRepository:
             from_status=old_status,
             to_status=Status.OPEN,
         )
+        await self.session.flush()
         await self.session.refresh(conversation)
         return conversation

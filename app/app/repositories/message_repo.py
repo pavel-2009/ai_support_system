@@ -71,5 +71,6 @@ class MessageRepository:
             return None
 
         conversation.status = Status.ESCALATED
+        await self.session.flush()
         await self.session.refresh(conversation)
         return conversation
