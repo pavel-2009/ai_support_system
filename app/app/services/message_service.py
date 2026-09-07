@@ -34,16 +34,22 @@ class MessageService:
             needs_review=needs_review,
         )
         if new_message is None:
-            raise ValueError(
-                f"Message was not created for conversation_id={conversation_id}"
+            logger.warning(
+                "MESSAGE SERVICE CREATE REJECTED: conversation_id=%s sender_type=%s sender_id=%s",
+                conversation_id,
+                sender_type,
+                sender_id,
             )
+            return None
 
         if needs_review:
             await self.uow.message.mark_conversation_for_review(conversation_id)
 
         logger.debug(
             "MESSAGE SERVICE CREATE OK: id=%s conversation_id=%s sender_type=%s",
-            new_message.id, conversation_id, sender_type,
+            new_message.id,
+            conversation_id,
+            sender_type,
         )
         return new_message
 
