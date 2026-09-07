@@ -1,5 +1,6 @@
 """Расширенные тесты для сервисов и роутеров для увеличения покрытия."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -15,14 +16,15 @@ class TestUserServiceExtended:
     async def test_get_user_by_email_success_and_not_found(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         mock_user = MagicMock(id=10, email="user10@example.com")
 
-        with patch.object(service.user_repo, "get_by_email", AsyncMock(return_value=mock_user)):
+        with patch.object(uow.users, "get_by_email", AsyncMock(return_value=mock_user)):
             result = await service.get_user_by_email("user10@example.com")
             assert result.id == 10
 
-        with patch.object(service.user_repo, "get_by_email", AsyncMock(return_value=None)):
+        with patch.object(uow.users, "get_by_email", AsyncMock(return_value=None)):
             with pytest.raises(ValueError):
                 await service.get_user_by_email("missing@example.com")
 
@@ -30,13 +32,14 @@ class TestUserServiceExtended:
     async def test_get_all_users_and_admin_create_user(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         users = [MagicMock(id=1), MagicMock(id=2)]
         admin = MagicMock(role=UserRole.ADMIN)
         non_admin = MagicMock(role=UserRole.USER)
         data = UserCreate(email="created@example.com", password="Pass123!", nickname="created")
 
-        with patch.object(service.user_repo, "list_all", AsyncMock(return_value=users)):
+        with patch.object(uow.users, "list_all", AsyncMock(return_value=users)):
             listed = await service.get_all_users()
             assert len(listed) == 2
 
@@ -51,13 +54,14 @@ class TestUserServiceExtended:
     async def test_update_user_permissions_and_delete_non_admin(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         target_user = MagicMock(id=10)
         admin = MagicMock(id=1, role=UserRole.ADMIN)
         foreign_user = MagicMock(id=2, role=UserRole.USER)
 
         with patch.object(service, "get_user_by_id", AsyncMock(return_value=target_user)), patch.object(
-            service.user_repo, "update", AsyncMock(return_value=MagicMock(id=10, nickname="newnick"))
+            uow.users, "update", AsyncMock(return_value=MagicMock(id=10, nickname="newnick"))
         ):
             updated = await service.update_user(10, UserUpdate(nickname="newnick"), admin)
             assert updated.nickname == "newnick"
@@ -73,15 +77,16 @@ class TestUserServiceExtended:
     async def test_login_user_invalid_credentials(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         data = UserLogin(email="missing@example.com", password="Pass123!")
 
-        with patch.object(service.user_repo, "get_by_email", AsyncMock(return_value=None)):
+        with patch.object(uow.users, "get_by_email", AsyncMock(return_value=None)):
             with pytest.raises(ValueError):
                 await service.login_user(data)
 
         user = MagicMock(hashed_password="hash")
-        with patch.object(service.user_repo, "get_by_email", AsyncMock(return_value=user)), patch(
+        with patch.object(uow.users, "get_by_email", AsyncMock(return_value=user)), patch(
             "app.services.user_service.verify_password", return_value=False
         ):
             with pytest.raises(ValueError):

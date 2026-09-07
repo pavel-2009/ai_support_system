@@ -187,11 +187,12 @@ class TestLLMTasks:
     async def test_process_async_creates_auto_reply_when_confident(self):
         fake_response = SimpleNamespace(answer="AI answer", confidence=0.95)
 
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=SimpleNamespace())
-        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        uow = SimpleNamespace(session=AsyncMock())
+        uow_context = MagicMock()
+        uow_context.__aenter__ = AsyncMock(return_value=uow)
+        uow_context.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.celery.tasks.llm_tasks.async_session", return_value=session_ctx):
+        with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
             with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
                 with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                     with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
@@ -217,11 +218,12 @@ class TestLLMTasks:
     async def test_process_async_escalates_on_low_confidence(self):
         fake_response = SimpleNamespace(answer="Need operator", confidence=0.2)
 
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=SimpleNamespace())
-        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        uow = SimpleNamespace(session=AsyncMock())
+        uow_context = MagicMock()
+        uow_context.__aenter__ = AsyncMock(return_value=uow)
+        uow_context.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.celery.tasks.llm_tasks.async_session", return_value=session_ctx):
+        with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
             with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
                 with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                     with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
@@ -244,11 +246,12 @@ class TestLLMTasks:
     async def test_process_async_creates_review_reply_on_mid_confidence(self):
         fake_response = SimpleNamespace(answer="Need review", confidence=0.7)
 
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=SimpleNamespace())
-        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        uow = SimpleNamespace(session=AsyncMock())
+        uow_context = MagicMock()
+        uow_context.__aenter__ = AsyncMock(return_value=uow)
+        uow_context.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.celery.tasks.llm_tasks.async_session", return_value=session_ctx):
+        with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
             with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
                 with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                     with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:

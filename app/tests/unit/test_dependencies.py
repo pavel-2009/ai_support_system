@@ -14,12 +14,12 @@ class TestGetCurrentUser:
         from app.core.security import create_access_token
 
         token = create_access_token({"user_id": 1, "email": "test@example.com", "role": "user"})
-        mock_session = AsyncMock()
+        mock_uow = SimpleNamespace(users=AsyncMock())
         mock_user = AsyncMock()
         mock_user.id = 1
 
         with patch("app.services.user_service.UserService.get_user_by_id", AsyncMock(return_value=mock_user)):
-            result = await get_current_user(token=token, session=mock_session)
+            result = await get_current_user(token=token, uow=mock_uow)
             assert result.id == 1
 
     @pytest.mark.asyncio
@@ -27,7 +27,7 @@ class TestGetCurrentUser:
         from app.core.dependencies import get_current_user
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(token="invalid.token", session=AsyncMock())
+            await get_current_user(token="invalid.token", uow=SimpleNamespace(users=AsyncMock()))
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -39,7 +39,7 @@ class TestGetCurrentUser:
 
         with patch("app.services.user_service.UserService.get_user_by_id", AsyncMock(side_effect=ValueError("Not found"))):
             with pytest.raises(HTTPException) as exc_info:
-                await get_current_user(token=token, session=AsyncMock())
+                await get_current_user(token=token, uow=SimpleNamespace(users=AsyncMock()))
             assert exc_info.value.status_code == 401
 
     def test_oauth2_scheme_exists(self):

@@ -1,5 +1,6 @@
 """Базовые unit-тесты для сервисов пользователей."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,9 +11,10 @@ class TestUserService:
     async def test_get_user_by_id_success(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         mock_user = MagicMock(id=1, email="test@example.com")
-        with patch.object(service.user_repo, "get_by_id", AsyncMock(return_value=mock_user)):
+        with patch.object(uow.users, "get_by_id", AsyncMock(return_value=mock_user)):
             result = await service.get_user_by_id(1)
             assert result.id == 1
 
@@ -20,8 +22,9 @@ class TestUserService:
     async def test_get_user_by_id_not_found(self):
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
-        with patch.object(service.user_repo, "get_by_id", AsyncMock(return_value=None)):
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
+        with patch.object(uow.users, "get_by_id", AsyncMock(return_value=None)):
             with pytest.raises(ValueError):
                 await service.get_user_by_id(999)
 
@@ -31,7 +34,8 @@ class TestUserService:
         from app.schemas.user import UserCreate, UserLogin
         from app.services.user_service import UserService
 
-        service = UserService(AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock())
+        service = UserService(uow)
         admin = MagicMock(role=UserRole.ADMIN)
 
         user_data = UserCreate(
@@ -42,17 +46,17 @@ class TestUserService:
         )
         created_user = MagicMock(id=1, email=user_data.email, role=UserRole.USER, hashed_password="hash")
 
-        with patch.object(service.user_repo, "exists", AsyncMock(return_value=False)), patch.object(
-            service.user_repo, "create", AsyncMock(return_value=created_user)
+        with patch.object(uow.users, "exists", AsyncMock(return_value=False)), patch.object(
+            uow.users, "create", AsyncMock(return_value=created_user)
         ), patch("app.services.user_service.hash_password", return_value="hashed"):
             created = await service.register_user(user_data)
             assert created.id == 1
 
-        with patch.object(service.user_repo, "exists", AsyncMock(return_value=True)):
+        with patch.object(uow.users, "exists", AsyncMock(return_value=True)):
             with pytest.raises(ValueError):
                 await service.register_user(user_data)
 
-        with patch.object(service.user_repo, "get_by_email", AsyncMock(return_value=created_user)), patch(
+        with patch.object(uow.users, "get_by_email", AsyncMock(return_value=created_user)), patch(
             "app.services.user_service.verify_password", return_value=True
         ), patch("app.services.user_service.create_tokens", return_value=MagicMock()):
             assert await service.login_user(UserLogin(email=user_data.email, password="Pass123!")) is not None
@@ -61,6 +65,6 @@ class TestUserService:
             assert await service.refresh_token(created_user) is not None
 
         with patch.object(service, "get_user_by_id", AsyncMock(return_value=created_user)), patch.object(
-            service.user_repo, "delete", AsyncMock(return_value=None)
+            uow.users, "delete", AsyncMock(return_value=None)
         ):
             await service.delete_user(1, admin)

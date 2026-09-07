@@ -116,11 +116,12 @@ class TestMessageService:
     async def test_service_delegates_to_repository_with_flags(self):
         from app.services.message_service import MessageService
 
-        service = MessageService(AsyncMock())
+        uow = SimpleNamespace(message=AsyncMock())
+        service = MessageService(uow)
 
         created_obj = SimpleNamespace(id=1, content="Ответ")
-        with patch.object(service.message_repo, "create_message", AsyncMock(return_value=created_obj)) as create_mock:
-            with patch.object(service.message_repo, "mark_conversation_for_review", AsyncMock()) as review_mock:
+        with patch.object(uow.message, "create_message", AsyncMock(return_value=created_obj)) as create_mock:
+            with patch.object(uow.message, "mark_conversation_for_review", AsyncMock()) as review_mock:
                 result = await service.create_message(
                     conversation_id=3,
                     sender_type="agent",
@@ -147,11 +148,12 @@ class TestMessageService:
     async def test_service_does_not_mark_for_review_when_flag_disabled(self):
         from app.services.message_service import MessageService
 
-        service = MessageService(AsyncMock())
+        uow = SimpleNamespace(message=AsyncMock())
+        service = MessageService(uow)
         created_obj = SimpleNamespace(id=10, content="Обычное сообщение")
 
-        with patch.object(service.message_repo, "create_message", AsyncMock(return_value=created_obj)):
-            with patch.object(service.message_repo, "mark_conversation_for_review", AsyncMock()) as review_mock:
+        with patch.object(uow.message, "create_message", AsyncMock(return_value=created_obj)):
+            with patch.object(uow.message, "mark_conversation_for_review", AsyncMock()) as review_mock:
                 result = await service.create_message(
                     conversation_id=5,
                     sender_type="user",
