@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # === AI ===
     LLM_BASE_URL: str = "http://localhost:11434/v1"
     LLM_API_KEY: str = "ollama"
-    LLM_MODEL: str = "llama3.2"
+    LLM_MODEL: str = "llama3.1"
     LLM_RETRY_ATTEMPTS: int = 5
     LLM_TIMEOUT: int = 20  # seconds
     LLM_TEMPERATURE: float = 0.7
