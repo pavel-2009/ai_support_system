@@ -9,7 +9,7 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.message_repo import MessageRepository
 
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, AsyncIterator
 
 
 class UnitOfWork:
@@ -37,4 +37,12 @@ class UnitOfWork:
                 await self.session.commit()
 
         finally:
-            self.session.close()
+            await self.session.close()
+
+
+@asynccontextmanager
+async def unit_of_work(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[UnitOfWork]:
+    async with UnitOfWork(session_factory) as uow:
+        yield uow
