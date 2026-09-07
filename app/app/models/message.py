@@ -16,21 +16,18 @@ class Message(Base):
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     sender_type = Column(String, nullable=False)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # AI messages do not have a corresponding user row, so sender_id is nullable.
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     content = Column(Text, nullable=False)
     is_auto_reply = Column(Boolean, default=False, nullable=False)
     confidence = Column(Float, nullable=True)
     needs_review = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    
-    # Отношения
+
     conversation = relationship("Conversation", back_populates="messages")
     sender = relationship("User", back_populates="messages")
-    
-    # Индексы
+
     __table_args__ = (
-        # Индекс для быстрого поиска сообщений по conversation_id
         Index("idx_conversation_id", "conversation_id"),
-        # Индекс для быстрого поиска сообщений по sender_id
         Index("idx_sender_id", "sender_id"),
     )
