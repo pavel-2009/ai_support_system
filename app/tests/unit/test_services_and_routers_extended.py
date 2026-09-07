@@ -96,6 +96,7 @@ class TestUserServiceExtended:
 class TestConversationServiceExtended:
     @pytest.mark.asyncio
     async def test_service_update_assign_close_methods(self, async_session):
+        from app.core.uow import UnitOfWork
         from app.models.user import User
         from app.services.conversation_service import ConversationService
 
@@ -117,20 +118,21 @@ class TestConversationServiceExtended:
         await async_session.refresh(owner)
         await async_session.refresh(operator)
 
-        service = ConversationService(async_session)
-        conv = await service.create_conversation(owner.id, Priority.MEDIUM, Channel.WEB)
+        async with UnitOfWork(lambda: async_session) as uow:
+            service = ConversationService(uow)
+            conv = await service.create_conversation(owner.id, Priority.MEDIUM, Channel.WEB)
 
-        escalated = await service.update_conversation_status(conv.id, Status.ESCALATED)
-        assert escalated is not None
-        assert escalated.status == Status.ESCALATED
+            escalated = await service.update_conversation_status(conv.id, Status.ESCALATED)
+            assert escalated is not None
+            assert escalated.status == Status.ESCALATED
 
-        assigned = await service.assign_operator(conv.id, operator.id)
-        assert assigned is not None
-        assert assigned.operator_id == operator.id
+            assigned = await service.assign_operator(conv.id, operator.id)
+            assert assigned is not None
+            assert assigned.operator_id == operator.id
 
-        closed = await service.close(conv.id)
-        assert closed is not None
-        assert closed.status == Status.CLOSED
+            closed = await service.close(conv.id)
+            assert closed is not None
+            assert closed.status == Status.CLOSED
 
 
 class TestRouterExtended:

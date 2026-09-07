@@ -3,3 +3,6 @@ up:
 
 down:
 		docker compose down -v
+
+test:
+		pytest app/tests/
