@@ -1,16 +1,14 @@
 """Сервис для работы с сообщениями."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.repositories.message_repo import MessageRepository
+from app.core.uow import UnitOfWork
 
 
 class MessageService:
     """Сервис для работы с сообщениями."""
 
 
-    def __init__(self, session: AsyncSession):
-        self.message_repo = MessageRepository(session)
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
 
 
     async def create_message(
@@ -25,7 +23,7 @@ class MessageService:
     ):
         """Создать новое сообщение."""
         
-        new_message = await self.message_repo.create_message(
+        new_message = await self.uow.message.create_message(
             conversation_id=conversation_id,
             sender_type=sender_type,
             sender_id=sender_id,
@@ -37,7 +35,7 @@ class MessageService:
         
         # Если нужно ревью - отмечаем диалог
         if needs_review:
-            await self.message_repo.mark_conversation_for_review(conversation_id)
+            await self.uow.message.mark_conversation_for_review(conversation_id)
 
         return new_message
 
@@ -45,4 +43,4 @@ class MessageService:
     async def get_messages_by_conversation(self, conversation_id: int):
         """Получить все сообщения для заданного conversation_id."""
         
-        return await self.message_repo.get_messages_by_conversation(conversation_id)
+        return await self.uow.message.get_messages_by_conversation(conversation_id)

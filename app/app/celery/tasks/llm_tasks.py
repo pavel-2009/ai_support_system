@@ -5,6 +5,7 @@ import asyncio
 from app.core.config import settings
 from app.celery.celery_app import celery_app
 from app.db import async_session
+from app.core.uow import UnitOfWork
 from app.repositories.llm_repo import LLMRepository
 from app.services.conversation_service import ConversationService
 from app.services.llm_service import LLMService
@@ -30,12 +31,12 @@ def process_llm_task(
 
 async def _process_llm_task_async(conversation_id: int) -> None:
     """Асинхронная обработка LLM-задачи с инициализацией зависимостей внутри Celery."""
-    async with async_session() as session:
+    async with UnitOfWork(async_session) as uow:
         llm_service = LLMService(LLMRepository())
-        message_service = MessageService(session)
-        conversation_service = ConversationService(session)
+        message_service = MessageService(uow)
+        conversation_service = ConversationService(uow)
 
-        response: LLMResponse = await llm_service.generate_response(conversation_id, session)
+        response: LLMResponse = await llm_service.generate_response(conversation_id, uow.session)
         confidence = response.confidence if hasattr(response, "confidence") else 0
 
         if confidence >= settings.LLM_AI_CONFIDENCE_THRESHOLD:

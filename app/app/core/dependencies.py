@@ -2,11 +2,12 @@
 
 from fastapi import Depends, HTTPException, Path, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from collections.abc import AsyncIterator
 
 from app.core.logging import get_logger
 from app.core.security import verify_access_token
-from app.db import get_async_session
+from app.core.uow import UnitOfWork
+from app.db import async_session
 from app.models.conversation import Conversation, Status
 from app.models.user import User
 from app.services.conversation_service import ConversationService
@@ -23,9 +24,15 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
+async def get_uow() -> AsyncIterator[UnitOfWork]:
+    """Открыть одну транзакцию на время обработки HTTP-запроса."""
+    async with UnitOfWork(async_session) as uow:
+        yield uow
+
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_async_session),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> User:
     """Получить текущего пользователя по access JWT."""
     payload = verify_access_token(token)
@@ -45,7 +52,7 @@ async def get_current_user(
         )
 
     try:
-        return await UserService(session).get_user_by_id(int(user_id))
+        return await UserService(uow).get_user_by_id(int(user_id))
     except ValueError as exc:
         logger.exception("Ошибка авторизации: пользователь из токена не найден.")
         raise HTTPException(
@@ -62,24 +69,24 @@ async def require_authenticated_user(
 
 
 async def get_user_service(
-    session: AsyncSession = Depends(get_async_session),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> UserService:
     """Зависимость для получения сервиса работы с пользователями."""
-    return UserService(session)
+    return UserService(uow)
 
 
 async def get_conversation_service(
-    session: AsyncSession = Depends(get_async_session),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> ConversationService:
     """Зависимость для получения сервиса работы с диалогами."""
-    return ConversationService(session)
+    return ConversationService(uow)
 
 
 async def get_message_service(
-    session: AsyncSession = Depends(get_async_session),
+    uow: UnitOfWork = Depends(get_uow),
 ) -> MessageService:
     """Зависимость для получения сервиса работы с сообщениями."""
-    return MessageService(session)
+    return MessageService(uow)
 
 
 async def get_llm_service() -> LLMService:

@@ -11,6 +11,8 @@ from sqlalchemy.pool import StaticPool
 
 from main import app
 from app.db import Base, get_async_session
+from app.core.dependencies import get_uow
+from app.core.uow import UnitOfWork
 from app.models.user import User, UserRole
 from app.core.security import hash_password
 
@@ -52,8 +54,13 @@ def client(async_session):
     
     def override_get_async_session():
         yield async_session
+
+    async def override_get_uow():
+        async with UnitOfWork(lambda: async_session) as uow:
+            yield uow
     
     app.dependency_overrides[get_async_session] = override_get_async_session
+    app.dependency_overrides[get_uow] = override_get_uow
     
     with TestClient(app) as test_client:
         yield test_client
@@ -67,8 +74,13 @@ def _create_authenticated_client(async_session, user_email: str, user_role: User
     
     def override_get_async_session():
         yield async_session
+
+    async def override_get_uow():
+        async with UnitOfWork(lambda: async_session) as uow:
+            yield uow
     
     app.dependency_overrides[get_async_session] = override_get_async_session
+    app.dependency_overrides[get_uow] = override_get_uow
     
     test_client = TestClient(app)
     

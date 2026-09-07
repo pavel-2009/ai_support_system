@@ -46,7 +46,6 @@ class ConversationRepository:
             actor_id=user_id,
             to_status=Status.OPEN,
         )
-        await self.session.commit()
         await self.session.refresh(new_conversation)
         return new_conversation
 
@@ -181,7 +180,6 @@ class ConversationRepository:
             from_status=old_status,
             to_status=new_status,
         )
-        await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
 
@@ -250,7 +248,6 @@ class ConversationRepository:
                 actor_id=previous_operator_id,
                 action="operator_unassigned",
             )
-        await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
 
@@ -278,7 +275,6 @@ class ConversationRepository:
             from_status=old_status,
             to_status=Status.CLOSED,
         )
-        await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
     
@@ -318,6 +314,5 @@ class ConversationRepository:
             from_status=old_status,
             to_status=Status.OPEN,
         )
-        await self.session.commit()
         await self.session.refresh(conversation)
         return conversation

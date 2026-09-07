@@ -47,7 +47,7 @@ class MessageRepository:
             needs_review=needs_review,
         )
         self.session.add(new_message)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(new_message)
         return new_message
 
@@ -71,6 +71,5 @@ class MessageRepository:
             return None
 
         conversation.status = Status.ESCALATED
-        await self.session.commit()
         await self.session.refresh(conversation)
         return conversation

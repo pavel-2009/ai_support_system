@@ -37,7 +37,7 @@ class UserRepository:
             hashed_password=hashed_password,
         )
         self.session.add(user)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(user)
         return user
 
@@ -50,14 +50,12 @@ class UserRepository:
         for key, value in payload.items():
             setattr(user, key, value)
 
-        await self.session.commit()
         await self.session.refresh(user)
         return user
 
 
     async def delete(self, user: User) -> None:
         await self.session.execute(delete(User).where(User.id == user.id))
-        await self.session.commit()
 
 
     async def exists(
