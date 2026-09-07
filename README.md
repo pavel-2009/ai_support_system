@@ -200,8 +200,12 @@ docker compose up --build
 - `postgres`
 - `redis`
 - `celery`
+- `ollama` (локальный OpenAI-совместимый LLM API)
+- `ollama-model` (однократно скачивает модель из `LLM_MODEL`)
 
 API по умолчанию: `http://localhost:8001/api/docs`.
+
+По умолчанию Compose использует `http://ollama:11434/v1` и модель `llama3.1`. Модели сохраняются в volume `ollama_data`; при первом запуске потребуется скачать несколько гигабайт.
 
 ## 2) Локально (без Docker)
 
