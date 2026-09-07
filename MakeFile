@@ -3,6 +3,3 @@ up:
 
 down:
 		docker compose down -v
-
-test:
-		pytest -v --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing
