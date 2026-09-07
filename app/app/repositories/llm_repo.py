@@ -9,12 +9,16 @@ import asyncio
 import inspect
 
 import json
+from ..core.logging import get_logger
 
 from ..core.config import settings
 from ..core.exceptions import LLMResponseFailed
 
 from ..schemas.llm import LLMResponse
 from ..models.message import Message
+
+
+logger = get_logger(__name__)
 
 
 class LLMRepository:
@@ -115,7 +119,11 @@ class LLMRepository:
                 return await self._generate_response(conversation_id, session)
             except Exception as e:
                 last_error = e
-                print(f"LLM response generation failed: {str(e)}. Retrying...") # print пока заглушка для логирования
+                logger.exception(
+                    "LLM response generation failed on attempt %s/%s; retrying",
+                    _ + 1,
+                    settings.LLM_RETRY_ATTEMPTS,
+                )
                 continue
 
         raise LLMResponseFailed(
