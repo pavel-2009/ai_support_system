@@ -15,10 +15,7 @@ from app.schemas.message import MessageCreate, MessageGet
 from app.services.message_service import MessageService
 from app.celery.tasks.llm_tasks import process_llm_task
 
-router = APIRouter(
-    prefix="/conversations",
-    tags=["messages"],
-)
+router = APIRouter(prefix="/conversations", tags=["messages"])
 logger = get_logger(__name__)
 
 
@@ -35,11 +32,7 @@ async def send_message(
     message_service: MessageService = Depends(get_message_service),
 ) -> MessageGet:
     """Отправить новое сообщение в беседе."""
-    logger.info(
-        "Пользователь %s отправляет сообщение в диалог %s.",
-        current_user.id,
-        conversation.id,
-    )
+    logger.info("HTTP SEND MESSAGE: user=%s conversation=%s", current_user.id, conversation.id)
     new_message: Message = await message_service.create_message(
         conversation_id=conversation.id,
         sender_type="user",
@@ -47,16 +40,13 @@ async def send_message(
         content=message.content,
         is_auto_reply=False,
     )
+    logger.info("HTTP SEND MESSAGE PERSISTED: message_id=%s conversation=%s", new_message.id, conversation.id)
 
     try:
-        process_llm_task.delay(
-            conversation_id=conversation.id,
-        )
+        task = process_llm_task.delay(conversation_id=conversation.id)
+        logger.info("CELERY ENQUEUED: task_id=%s conversation_id=%s", task.id, conversation.id)
     except Exception:
-        logger.exception(
-            "Не удалось поставить LLM-задачу в очередь для диалога %s.",
-            conversation.id,
-        )
+        logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
 
     return new_message
 
@@ -72,9 +62,7 @@ async def get_messages(
     message_service: MessageService = Depends(get_message_service),
 ) -> list[MessageGet]:
     """Получить все сообщения в беседе."""
-    logger.info(
-        "Пользователь %s запрашивает сообщения диалога %s.",
-        current_user.id,
-        conversation.id,
-    )
-    return await message_service.get_messages_by_conversation(conversation.id)
+    logger.info("HTTP GET MESSAGES: user=%s conversation=%s", current_user.id, conversation.id)
+    messages = await message_service.get_messages_by_conversation(conversation.id)
+    logger.info("HTTP GET MESSAGES OK: user=%s conversation=%s count=%s", current_user.id, conversation.id, len(messages))
+    return messages
