@@ -1,21 +1,19 @@
 """Репозиторий для работы с LLM-моделью для генерации ответов на вопросы пользователей."""
 
-from typing import List
-from openai import OpenAI
-
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 import asyncio
 import inspect
-
 import json
-from ..core.logging import get_logger
+from typing import List
+
+from openai import OpenAI
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.exceptions import LLMResponseFailed
-
-from ..schemas.llm import LLMResponse
+from ..core.logging import get_logger
 from ..models.message import Message
+from ..schemas.llm import LLMResponse
 
 
 logger = get_logger(__name__)
@@ -28,16 +26,19 @@ class LLMRepository:
         self,
         api_key: str = settings.LLM_API_KEY,
         model: str = settings.LLM_MODEL,
-        ):
-        
+    ):
         self.client = OpenAI(
             base_url=settings.LLM_BASE_URL,
             api_key=api_key,
         )
         self.model = model
 
-    async def _generate_response(self, conversation_id: int, session: AsyncSession) -> LLMResponse:
-        """Генерирует ответ на заданный вопрос с помощью LLM модели."""
+    async def _generate_response(
+        self,
+        conversation_id: int,
+        session: AsyncSession,
+    ) -> LLMResponse:
+        """Генерирует структурированный ответ на вопрос пользователя."""
         messages = await self._generate_prompt(conversation_id, session)
         response = self.client.chat.completions.create(
             model=self.model,
@@ -45,91 +46,88 @@ class LLMRepository:
             max_tokens=settings.LLM_TOKEN_LIMIT,
             temperature=settings.LLM_TEMPERATURE,
             timeout=settings.LLM_TIMEOUT,
+            response_format={"type": "json_object"},
         )
-        
+
+        content = response.choices[0].message.content or ""
+
         try:
-            return LLMResponse(**json.loads(response.choices[0].message.content))
+            payload = json.loads(content)
+            return LLMResponse.model_validate(payload)
         except json.JSONDecodeError:
-            logger.error(
-                "LLM response is not valid JSON: %s",
-                response.choices[0].message.content,
-            )
+            logger.error("LLM response is not valid JSON: %r", content)
             return LLMResponse(
-                answer='У меня нет ответа на этот вопрос.',
+                answer="У меня нет ответа на этот вопрос.",
                 confidence=0.1,
                 topic="unknown",
-            )  
-        except Exception as e:
-            raise LLMResponseFailed(f"Error parsing LLM response: {str(e)}") 
+            )
+        except Exception as exc:
+            raise LLMResponseFailed(f"Error parsing LLM response: {exc}") from exc
 
     def _generate_messages_history(
         self,
-        conversation_history: List[str]
+        conversation_history: List[Message],
     ) -> List[dict]:
-        """Генерирует список сообщений для отправки в LLM модель на основе истории разговора и текущего вопроса."""
-        
-        messages = []
-        
+        """Преобразует историю сообщений в корректный chat-completions prompt."""
+        messages = [{"role": "system", "content": self._generate_system_prompt()}]
+
         for msg in conversation_history:
-            messages.append({"role": "user", "content": msg})
-            
-        messages.append({"role": "system", "content": self._generate_system_prompt(conversation_history)})
-        
+            role = "user" if msg.sender_type == "user" else "assistant"
+            messages.append({"role": role, "content": msg.content})
+
         return messages
-    
-    
-    def _generate_system_prompt(self, conversation_history: List[str]) -> str:
-        """Генерирует системный промпт для LLM модели на основе истории разговора."""
-        
-        if not conversation_history:
-            return "You are a helpful assistant."
-        
-        last_message = conversation_history[-1]
-        return f"You are a helpful assistant. The last message from the user was: '{last_message}'"
-    
-    
+
+    def _generate_system_prompt(self) -> str:
+        """Возвращает системную инструкцию для модели."""
+        return (
+            "You are an AI customer support assistant. "
+            "Answer the user's latest message using the conversation history. "
+            "You MUST return ONLY a valid JSON object with exactly these fields: "
+            "answer (string), confidence (number from 0 to 1), topic (string). "
+            "Do not return Markdown, code fences, labels such as 'Assistant:', "
+            "or any text outside the JSON object."
+        )
+
     async def _generate_prompt(
         self,
         conversation_id: int,
-        session: AsyncSession
-        ) -> List[dict]:
-        """Генерирует промпт для LLM модели на основе истории разговора."""
-        
-        # Получаем историю сообщений для данного conversation_id
-        exec_result = session.execute(select(Message).where(Message.conversation_id == conversation_id))
+        session: AsyncSession,
+    ) -> List[dict]:
+        """Получает последние сообщения беседы в хронологическом порядке."""
+        exec_result = session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(5)
+        )
         if inspect.isawaitable(exec_result):
             result = await exec_result
         else:
             result = exec_result
 
-        last_messages: List[Message] = sorted(result.scalars().all(), key=lambda x: x.created_at, reverse=True)[:5]  # Берем последние 5 сообщений
-        
-        conversation_history = [msg.content for msg in last_messages]
-        
-        return self._generate_messages_history(conversation_history)
-        
-        
-    # Основной метод для получения ответа от LLM модели
+        messages = list(reversed(result.scalars().all()))
+        return self._generate_messages_history(messages)
+
     async def get_llm_response(
         self,
         conversation_id: int,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> LLMResponse:
         """Получает ответ от LLM модели на основе истории разговора."""
         last_error: Exception | None = None
-        for _ in range(settings.LLM_RETRY_ATTEMPTS):
+        for attempt in range(settings.LLM_RETRY_ATTEMPTS):
             try:
-                await asyncio.sleep(10)
                 return await self._generate_response(conversation_id, session)
-            except Exception as e:
-                last_error = e
+            except Exception as exc:
+                last_error = exc
                 logger.exception(
                     "LLM response generation failed on attempt %s/%s; retrying",
-                    _ + 1,
+                    attempt + 1,
                     settings.LLM_RETRY_ATTEMPTS,
                 )
-                continue
+                await asyncio.sleep(2**attempt)
 
         raise LLMResponseFailed(
-            f"Failed to get response from LLM model: {str(last_error) if last_error else 'Unknown error'}"
+            "Failed to get response from LLM model: "
+            f"{last_error if last_error else 'Unknown error'}"
         )
