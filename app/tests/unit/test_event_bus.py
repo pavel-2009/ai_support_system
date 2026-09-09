@@ -1,6 +1,8 @@
 import pytest
+from unittest.mock import AsyncMock, patch
 
 from app.core.event_bus import EventBus, on_event
+from app.core.uow import UnitOfWork
 from app.domain.events import ConversationCreated
 
 
@@ -50,3 +52,29 @@ async def test_publish_rejects_async_handler():
 
     with pytest.raises(RuntimeError, match="publish_async"):
         bus.publish(ConversationCreated("conversation-3"))
+
+
+@pytest.mark.asyncio
+async def test_uow_publishes_events_after_commit():
+    calls = []
+
+    class Session:
+        async def commit(self):
+            calls.append("commit")
+
+        async def rollback(self):
+            calls.append("rollback")
+
+        async def close(self):
+            calls.append("close")
+
+    event = ConversationCreated("conversation-4")
+
+    async def publish(event):
+        calls.append(("publish", event.conversation_id))
+
+    with patch("app.core.uow.event_bus.publish_async", new=publish):
+        async with UnitOfWork(lambda: Session()) as uow:
+            uow.add_event(event)
+
+    assert calls == ["commit", ("publish", "conversation-4"), "close"]
