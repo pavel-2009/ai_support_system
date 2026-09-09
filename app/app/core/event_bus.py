@@ -59,6 +59,9 @@ class EventBus:
                 await result
 
 
+event_bus = EventBus()
+
+
 def on_event(event_type: Type[DomainEvent], event_bus: EventBus):
     """Декоратор для подписки обработчика через переданный event bus."""
     return event_bus.on_event(event_type)
