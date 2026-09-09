@@ -124,11 +124,14 @@ app/
 
 1. Пользователь отправляет сообщение в диалог.
 2. Сообщение сохраняется, затем ставится Celery-задача `process_llm_task`.
-3. Задача запрашивает LLM-ответ и confidence.
-4. Развилка по confidence:
+3. Задача формирует запрос, отправляет его в LLM и получает ответ.
+4. Ответ проходит проверку структуры, JSON-декодирование и строгую Pydantic-валидацию.
+5. Развилка по `confidence`:
    - `>= LLM_AI_CONFIDENCE_THRESHOLD` — AI отвечает автоматически;
    - `>= LLM_ESCALATION_CONFIDENCE_THRESHOLD` — AI отвечает, но с `needs_review=True`;
    - ниже порога — диалог переводится в `escalated`.
+
+LLM-запрос выполняется **один раз**. Ошибка запроса, некорректный JSON или ошибка валидации не запускают автоматические повторы.
 
 ---
 
@@ -164,14 +167,13 @@ app/
 - `LLM_BASE_URL` (по умолчанию `http://localhost:11434/v1`, OpenAI-совместимый endpoint Ollama)
 - `LLM_API_KEY`
 - `LLM_MODEL`
-- `LLM_RETRY_ATTEMPTS`
 - `LLM_TIMEOUT`
 - `LLM_TEMPERATURE`
 - `LLM_AI_CONFIDENCE_THRESHOLD`
 - `LLM_ESCALATION_CONFIDENCE_THRESHOLD`
 - `LLM_TOKEN_LIMIT`
 
-По умолчанию приложение использует локальную модель Ollama `llama3.2`. Перед запуском установите Ollama и выполните `ollama pull llama3.2`. Для OpenRouter задайте в `.env` `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` и нужную `LLM_MODEL`.
+По умолчанию приложение использует локальную модель Ollama `llama3.1`. Перед запуском установите Ollama и выполните `ollama pull llama3.1`. Для OpenRouter задайте в `.env` `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` и нужную `LLM_MODEL`.
 
 ### Celery / Redis
 
@@ -245,10 +247,6 @@ alembic upgrade head
 cd app
 pytest --cov=app --cov-report=term-missing
 ```
-
-Актуальный результат в рабочем окружении: **110 passed, 90% total coverage**.
-
-> Примечание: в тестах есть 2 warning, связанные с моками coroutine в LLM task-тестах; на статус прохождения это не влияет.
 
 ---
 
