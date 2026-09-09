@@ -50,6 +50,10 @@ class LLMRepository:
         try:
             return LLMResponse(**json.loads(response.choices[0].message.content))
         except json.JSONDecodeError:
+            logger.error(
+                "LLM response is not valid JSON: %s",
+                response.choices[0].message.content,
+            )
             return LLMResponse(
                 answer='У меня нет ответа на этот вопрос.',
                 confidence=0.1,
