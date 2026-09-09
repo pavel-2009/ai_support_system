@@ -39,10 +39,11 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "llama3.1"
     LLM_RETRY_ATTEMPTS: int = 5
     LLM_TIMEOUT: int = 20  # seconds
-    LLM_TEMPERATURE: float = 0.7
+    # Низкая температура нужна для стабильного машинно-читаемого JSON-ответа.
+    LLM_TEMPERATURE: float = 0.0
     LLM_AI_CONFIDENCE_THRESHOLD: float = 0.8
     LLM_ESCALATION_CONFIDENCE_THRESHOLD: float = 0.65
-    LLM_TOKEN_LIMIT: int = 4096
+    LLM_TOKEN_LIMIT: int = 1024
     
     # === Celery ===
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
