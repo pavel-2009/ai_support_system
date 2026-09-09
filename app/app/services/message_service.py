@@ -2,6 +2,7 @@
 
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
+from app.domain.events import MessageSent
 
 
 logger = get_logger(__name__)
@@ -44,6 +45,10 @@ class MessageService:
 
         if needs_review:
             await self.uow.message.mark_conversation_for_review(conversation_id)
+
+        add_event = getattr(self.uow, "add_event", None)
+        if add_event is not None:
+            add_event(MessageSent(str(new_message.id), str(conversation_id)))
 
         logger.debug(
             "MESSAGE SERVICE CREATE OK: id=%s conversation_id=%s sender_type=%s",

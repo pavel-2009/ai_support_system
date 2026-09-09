@@ -1,6 +1,12 @@
 """Сервис для работы с диалогами."""
 
 from app.core.uow import UnitOfWork
+from app.domain.events import (
+    ConversationClosed,
+    ConversationCreated,
+    ConversationEscalated,
+    OperatorAssigned,
+)
 from app.models.conversation import Channel, Conversation, Priority, Status
 
 
@@ -16,7 +22,9 @@ class ConversationService:
         priority: Priority,
         channel: Channel,
     ) -> Conversation:
-        return await self.uow.conversation.create_conversation(user_id, priority, channel)
+        conversation = await self.uow.conversation.create_conversation(user_id, priority, channel)
+        self.uow.add_event(ConversationCreated(str(conversation.id)))
+        return conversation
 
     async def get_conversation_by_id(self, conversation_id: int) -> Conversation | None:
         return await self.uow.conversation.get_conversation_by_id(conversation_id)
@@ -71,13 +79,22 @@ class ConversationService:
         conversation_id: int,
         new_status: Status,
     ) -> Conversation | None:
-        return await self.uow.conversation.update_conversation_status(conversation_id, new_status)
+        conversation = await self.uow.conversation.update_conversation_status(conversation_id, new_status)
+        if conversation is not None and new_status == Status.ESCALATED:
+            self.uow.add_event(ConversationEscalated(str(conversation.id)))
+        return conversation
 
     async def assign_operator(self, conversation_id: int, operator_id: int) -> Conversation | None:
-        return await self.uow.conversation.assign_operator(conversation_id, operator_id)
+        conversation = await self.uow.conversation.assign_operator(conversation_id, operator_id)
+        if conversation is not None:
+            self.uow.add_event(OperatorAssigned(str(conversation.id), str(operator_id)))
+        return conversation
 
     async def close(self, conversation_id: int) -> Conversation | None:
-        return await self.uow.conversation.close_conversation(conversation_id)
+        conversation = await self.uow.conversation.close_conversation(conversation_id)
+        if conversation is not None:
+            self.uow.add_event(ConversationClosed(str(conversation.id)))
+        return conversation
     
     async def back_to_ai(self, conversation_id: int) -> Conversation | None:
         return await self.uow.conversation.back_to_ai(conversation_id)
