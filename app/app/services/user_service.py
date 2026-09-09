@@ -14,6 +14,16 @@ class UserService:
     def __init__(self, uow: UnitOfWork):
         self.uow = uow
 
+    def _add_event(self, event) -> None:
+        """Queue an event when the UoW supports domain events.
+
+        Lightweight service tests may use a minimal UoW stub without event support;
+        the real UnitOfWork always provides ``add_event``.
+        """
+        add_event = getattr(self.uow, "add_event", None)
+        if add_event is not None:
+            add_event(event)
+
     async def get_user_by_id(self, user_id: int) -> User:
         user = await self.uow.users.get_by_id(user_id)
         if not user:
@@ -35,7 +45,7 @@ class UserService:
 
         hashed_password = hash_password(data.password)
         user = await self.uow.users.create(data, hashed_password)
-        self.uow.add_event(UserRegistered(str(user.id)))
+        self._add_event(UserRegistered(str(user.id)))
         return user
 
     async def create_user_by_admin(
@@ -60,7 +70,7 @@ class UserService:
             raise ValueError("Пользователь может обновлять только свои данные.")
 
         updated_user = await self.uow.users.update(user, data)
-        self.uow.add_event(UserUpdated(str(updated_user.id)))
+        self._add_event(UserUpdated(str(updated_user.id)))
         return updated_user
 
     async def delete_user(self, user_id: int, current_user: User) -> None:
@@ -69,7 +79,7 @@ class UserService:
 
         user = await self.get_user_by_id(user_id)
         await self.uow.users.delete(user)
-        self.uow.add_event(UserDeleted(str(user.id)))
+        self._add_event(UserDeleted(str(user.id)))
 
     async def login_user(self, data: UserLogin) -> Token:
         user = await self.uow.users.get_by_email(data.email)
