@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 
 class UnitOfWork:
-    """Basic unit of work for sessions."""
+    """Unit of work for database transactions and post-commit domain events."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self.session_factory = session_factory
@@ -49,14 +49,27 @@ class UnitOfWork:
                 logger.debug("DB TRANSACTION COMMIT START: session_id=%s", id(self.session))
                 await self.session.commit()
                 logger.debug("DB TRANSACTION COMMIT OK: session_id=%s", id(self.session))
-                for event in self._events:
-                    await event_bus.publish_async(event)
+                await self._publish_events()
         except Exception:
             logger.exception("DB TRANSACTION FINALIZATION FAILED: session_id=%s", id(self.session))
             raise
         finally:
             await self.session.close()
             logger.debug("DB UOW CLOSE: session_id=%s", id(self.session))
+
+    async def _publish_events(self) -> None:
+        """Опубликовать post-commit события, не откатывая уже успешную транзакцию."""
+        events = self._events
+        self._events = []
+
+        for event in events:
+            try:
+                await event_bus.publish_async(event)
+            except Exception:
+                logger.exception(
+                    "DOMAIN EVENT HANDLER FAILED: event=%s",
+                    type(event).__name__,
+                )
 
 
 @asynccontextmanager
