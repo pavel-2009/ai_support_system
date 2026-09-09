@@ -10,6 +10,7 @@ from app.celery.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db import get_async_session
+import app.services.event_handlers  # noqa: F401
 from app.routers.users.conversation import router as conversation_router
 from app.routers.users.message import router as message_router
 from app.routers.users.user import admin_router, auth_router, users_router
