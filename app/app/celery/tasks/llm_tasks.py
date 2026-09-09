@@ -44,6 +44,10 @@ async def _process_llm_task_async(conversation_id: int) -> None:
         conversation_service = ConversationService(uow)
 
         response: LLMResponse = await llm_service.generate_response(conversation_id, uow.session)
+        logger.info(
+            "LLM PIPELINE: response generated conversation_id=%s answer=%s",
+            conversation_id, getattr(response, "answer", None),
+        )
         confidence = response.confidence if hasattr(response, "confidence") else 0
         logger.info(
             "LLM PIPELINE: response generated conversation_id=%s confidence=%s",
