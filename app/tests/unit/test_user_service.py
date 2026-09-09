@@ -34,7 +34,7 @@ class TestUserService:
         from app.schemas.user import UserCreate, UserLogin
         from app.services.user_service import UserService
 
-        uow = SimpleNamespace(users=AsyncMock())
+        uow = SimpleNamespace(users=AsyncMock(), add_event=MagicMock())
         service = UserService(uow)
         admin = MagicMock(role=UserRole.ADMIN)
 
