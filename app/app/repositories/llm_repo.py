@@ -40,6 +40,7 @@ class LLMRepository:
     ) -> LLMResponse:
         """Генерирует структурированный ответ на вопрос пользователя."""
         messages = await self._generate_prompt(conversation_id, session)
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -50,10 +51,10 @@ class LLMRepository:
         )
 
         content = response.choices[0].message.content or ""
+        logger.debug("Raw LLM response: %r", content)
 
         try:
-            payload = json.loads(content)
-            return LLMResponse.model_validate(payload)
+            return LLMResponse.model_validate_json(content)
         except json.JSONDecodeError:
             logger.error("LLM response is not valid JSON: %r", content)
             return LLMResponse(
@@ -72,20 +73,36 @@ class LLMRepository:
         messages = [{"role": "system", "content": self._generate_system_prompt()}]
 
         for msg in conversation_history:
-            role = "user" if msg.sender_type == "user" else "assistant"
+            if msg.sender_type == "user":
+                role = "user"
+            elif msg.sender_type in {"ai", "operator"}:
+                role = "assistant"
+            else:
+                logger.warning("Unknown sender_type=%r; treating it as assistant", msg.sender_type)
+                role = "assistant"
+
             messages.append({"role": role, "content": msg.content})
 
         return messages
 
     def _generate_system_prompt(self) -> str:
-        """Возвращает системную инструкцию для модели."""
+        """Возвращает строгую инструкцию для Ollama/OpenAI-compatible chat API."""
+        schema = json.dumps(
+            LLMResponse.model_json_schema(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         return (
             "You are an AI customer support assistant. "
-            "Answer the user's latest message using the conversation history. "
-            "You MUST return ONLY a valid JSON object with exactly these fields: "
-            "answer (string), confidence (number from 0 to 1), topic (string). "
-            "Do not return Markdown, code fences, labels such as 'Assistant:', "
-            "or any text outside the JSON object."
+            "Use the conversation history and answer the latest user message. "
+            "Your response is consumed by a program, not directly by the user. "
+            "Return ONLY one valid JSON object matching this schema: "
+            f"{schema} "
+            "The JSON object must contain exactly the fields answer, confidence, and topic. "
+            "answer must be a string. confidence must be a number from 0 to 1. "
+            "topic must be a short string. "
+            "Do not output Markdown, code fences, explanations, prefixes, labels, "
+            "or text such as 'Assistant:' before or after the JSON."
         )
 
     async def _generate_prompt(
@@ -105,7 +122,7 @@ class LLMRepository:
         else:
             result = exec_result
 
-        messages = list(reversed(result.scalars().all()))
+        messages = list(reversed(result.scalars().all()))[:5]
         return self._generate_messages_history(messages)
 
     async def get_llm_response(
