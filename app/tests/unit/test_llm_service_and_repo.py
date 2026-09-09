@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -47,7 +47,7 @@ class TestLLMService:
 
 
 class TestLLMRepositoryHelpers:
-    @patch("app.repositories.llm_repo.OpenAI")
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
     def test_uses_configured_llm_endpoint(self, openai_mock):
         LLMRepository(api_key="x", model="test-model")
         openai_mock.assert_called_once_with(
@@ -55,18 +55,19 @@ class TestLLMRepositoryHelpers:
             api_key="x",
         )
 
-    @patch("app.repositories.llm_repo.OpenAI")
-    def test_generate_system_prompt_contains_json_contract(self, _openai_mock):
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    def test_generate_system_prompt_contains_simple_json_contract(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
         prompt = repo._generate_system_prompt()
 
-        assert "valid JSON object" in prompt
+        assert "exactly one JSON object" in prompt
         assert "answer" in prompt
         assert "confidence" in prompt
         assert "topic" in prompt
-        assert "Assistant:" in prompt
+        assert "Do not return a JSON Schema" in prompt
+        assert "Assistant:" not in prompt
 
-    @patch("app.repositories.llm_repo.OpenAI")
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
     def test_generate_messages_history_uses_correct_roles_and_order(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
         history = [
@@ -83,7 +84,7 @@ class TestLLMRepositoryHelpers:
         assert messages[3] == {"role": "assistant", "content": "operator answer"}
 
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
     async def test_generate_prompt_takes_last_five_in_chronological_order(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
         now = datetime.utcnow()
@@ -95,100 +96,119 @@ class TestLLMRepositoryHelpers:
         ]
 
         session = MagicMock()
-        session.execute = MagicMock(return_value=_FakeResult(messages))
+        session.execute = AsyncMock(return_value=_FakeResult(messages))
 
         prompt_messages = await repo._generate_prompt(conversation_id=1, session=session)
 
         assert len(prompt_messages) == 6
         user_contents = [m["content"] for m in prompt_messages if m["role"] == "user"]
         assert user_contents == ["msg_0", "msg_1", "msg_2", "msg_3", "msg_4"]
+        session.execute.assert_awaited_once()
 
 
 class TestLLMRepositoryResponses:
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
     async def test_generate_response_parses_valid_json(self, openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
         content = '{"answer": "A", "confidence": 0.77, "topic": "support"}'
-        repo.client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        repo.client.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+            )
         )
 
-        async def mock_prompt(*args, **kwargs):
-            return [{"role": "user", "content": "Q"}]
-
-        with patch.object(repo, "_generate_prompt", side_effect=mock_prompt):
+        with patch.object(
+            repo,
+            "_generate_prompt",
+            new=AsyncMock(return_value=[
+                {"role": "system", "content": "prompt"},
+                {"role": "user", "content": "Q"},
+            ]),
+        ):
             result = await repo._generate_response(conversation_id=9, session=MagicMock())
 
         assert result == LLMResponse(answer="A", confidence=0.77, topic="support")
         call_kwargs = repo.client.chat.completions.create.call_args.kwargs
         assert call_kwargs["response_format"] == {"type": "json_object"}
+        repo.client.chat.completions.create.assert_awaited_once()
         assert openai_mock.called
 
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
-    async def test_generate_response_on_invalid_json_returns_fallback(self, _openai_mock):
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    async def test_generate_response_on_invalid_json_raises(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
-        repo.client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Assistant"))]
+        repo.client.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="Assistant"))]
+            )
         )
 
-        async def mock_prompt(*args, **kwargs):
-            return [{"role": "user", "content": "Q"}]
+        with patch.object(
+            repo,
+            "_generate_prompt",
+            new=AsyncMock(return_value=[
+                {"role": "system", "content": "prompt"},
+                {"role": "user", "content": "Q"},
+            ]),
+        ):
+            with pytest.raises(LLMResponseFailed, match="invalid JSON"):
+                await repo._generate_response(conversation_id=9, session=MagicMock())
 
-        with patch.object(repo, "_generate_prompt", side_effect=mock_prompt):
-            result = await repo._generate_response(conversation_id=9, session=MagicMock())
-
-        assert result.answer == "У меня нет ответа на этот вопрос."
-        assert result.confidence == pytest.approx(0.1)
-        assert result.topic == "unknown"
+        repo.client.chat.completions.create.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
-    async def test_generate_response_on_schema_error_raises_llm_failed(self, _openai_mock):
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    async def test_generate_response_on_schema_error_raises(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
         bad_schema_json = '{"answer": "A", "topic": "support"}'
-        repo.client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=bad_schema_json))]
+        repo.client.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=bad_schema_json))]
+            )
         )
 
-        async def mock_prompt(*args, **kwargs):
-            return [{"role": "user", "content": "Q"}]
-
-        with patch.object(repo, "_generate_prompt", side_effect=mock_prompt):
-            with pytest.raises(LLMResponseFailed):
+        with patch.object(
+            repo,
+            "_generate_prompt",
+            new=AsyncMock(return_value=[
+                {"role": "system", "content": "prompt"},
+                {"role": "user", "content": "Q"},
+            ]),
+        ):
+            with pytest.raises(LLMResponseFailed, match="validation failed"):
                 await repo._generate_response(conversation_id=9, session=MagicMock())
 
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
-    async def test_get_llm_response_retries_and_then_success(self, _openai_mock):
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    async def test_generate_response_rejects_json_schema_echo(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
-        ok = LLMResponse(answer="done", confidence=0.8, topic="topic")
+        schema_echo = '{"type":"object","properties":{"answer":{"type":"string"}}}'
+        repo.client.chat.completions.create = AsyncMock(
+            return_value=SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=schema_echo))]
+            )
+        )
 
-        async def async_gen_response(*args, **kwargs):
-            if async_gen_response.call_count == 0:
-                async_gen_response.call_count += 1
-                raise RuntimeError("boom")
-            return ok
-
-        async_gen_response.call_count = 0
-
-        with patch.object(repo, "_generate_response", side_effect=async_gen_response):
-            result = await repo.get_llm_response(conversation_id=5, session=MagicMock())
-
-        assert result == ok
+        with patch.object(
+            repo,
+            "_generate_prompt",
+            new=AsyncMock(return_value=[
+                {"role": "system", "content": "prompt"},
+                {"role": "user", "content": "Q"},
+            ]),
+        ):
+            with pytest.raises(LLMResponseFailed, match="validation failed"):
+                await repo._generate_response(conversation_id=9, session=MagicMock())
 
     @pytest.mark.asyncio
-    @patch("app.repositories.llm_repo.OpenAI")
-    async def test_get_llm_response_raises_after_all_retries(self, _openai_mock):
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    async def test_get_llm_response_makes_only_one_attempt(self, _openai_mock):
         repo = LLMRepository(api_key="x", model="test-model")
+        generate_response = AsyncMock(side_effect=LLMResponseFailed("boom"))
 
-        async def async_failing_response(*args, **kwargs):
-            raise RuntimeError("boom")
-
-        with patch.object(repo, "_generate_response", side_effect=async_failing_response):
-            with pytest.raises(LLMResponseFailed) as exc:
+        with patch.object(repo, "_generate_response", new=generate_response):
+            with pytest.raises(LLMResponseFailed, match="boom"):
                 await repo.get_llm_response(conversation_id=5, session=MagicMock())
 
-        assert "Failed to get response from LLM model" in str(exc.value)
-        assert "boom" in str(exc.value)
+        generate_response.assert_awaited_once()
