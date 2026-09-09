@@ -54,7 +54,7 @@ class LLMRepository:
         logger.debug("Raw LLM response: %r", content)
 
         try:
-            return LLMResponse.model_validate_json(content)
+            payload = json.loads(content)
         except json.JSONDecodeError:
             logger.error("LLM response is not valid JSON: %r", content)
             return LLMResponse(
@@ -62,8 +62,11 @@ class LLMRepository:
                 confidence=0.1,
                 topic="unknown",
             )
+
+        try:
+            return LLMResponse.model_validate(payload)
         except Exception as exc:
-            raise LLMResponseFailed(f"Error parsing LLM response: {exc}") from exc
+            raise LLMResponseFailed(f"Error validating LLM response: {exc}") from exc
 
     def _generate_messages_history(
         self,
