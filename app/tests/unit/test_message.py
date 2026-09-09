@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -116,7 +116,7 @@ class TestMessageService:
     async def test_service_delegates_to_repository_with_flags(self):
         from app.services.message_service import MessageService
 
-        uow = SimpleNamespace(message=AsyncMock())
+        uow = SimpleNamespace(message=AsyncMock(), add_event=MagicMock())
         service = MessageService(uow)
 
         created_obj = SimpleNamespace(id=1, content="Ответ")
@@ -148,7 +148,7 @@ class TestMessageService:
     async def test_service_does_not_mark_for_review_when_flag_disabled(self):
         from app.services.message_service import MessageService
 
-        uow = SimpleNamespace(message=AsyncMock())
+        uow = SimpleNamespace(message=AsyncMock(), add_event=MagicMock())
         service = MessageService(uow)
         created_obj = SimpleNamespace(id=10, content="Обычное сообщение")
 

@@ -1,33 +1,78 @@
-"""Классы событий, которые могут происходить в системе."""
+"""Доменные события бизнес-логики приложения."""
+
 
 class DomainEvent:
-    """Базовый класс для всех событий в доменной модели."""
-    pass
+    """Базовый класс для всех событий доменной модели."""
 
 
 class ConversationCreated(DomainEvent):
-    """Событие, которое возникает при создании нового разговора."""
+    """Диалог создан."""
+
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
 
+
 class MessageSent(DomainEvent):
-    """Событие, которое возникает при отправке нового сообщения."""
+    """Сообщение создано."""
+
     def __init__(self, message_id: str, conversation_id: str):
         self.message_id = message_id
         self.conversation_id = conversation_id
 
+
 class ConversationEscalated(DomainEvent):
-    """Событие, которое возникает при эскалации разговора."""
+    """Диалог эскалирован на оператора."""
+
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
+
 
 class ConversationClosed(DomainEvent):
-    """Событие, которое возникает при закрытии разговора."""
+    """Диалог закрыт."""
+
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
 
+
 class OperatorAssigned(DomainEvent):
-    """Событие, которое возникает при назначении оператора на разговор."""
+    """Оператор назначен на диалог."""
+
     def __init__(self, conversation_id: str, operator_id: str):
         self.conversation_id = conversation_id
         self.operator_id = operator_id
+
+
+class ConversationReturnedToAI(DomainEvent):
+    """Диалог возвращён из операторской очереди обратно ИИ."""
+
+    def __init__(self, conversation_id: str, operator_id: str):
+        self.conversation_id = conversation_id
+        self.operator_id = operator_id
+
+
+class ConversationMarkedForReview(DomainEvent):
+    """Диалог помечен для обязательного ревью оператором."""
+
+    def __init__(self, conversation_id: str):
+        self.conversation_id = conversation_id
+
+
+class UserRegistered(DomainEvent):
+    """Пользователь зарегистрирован."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+
+
+class UserUpdated(DomainEvent):
+    """Данные пользователя изменены."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+
+
+class UserDeleted(DomainEvent):
+    """Пользователь удалён."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id

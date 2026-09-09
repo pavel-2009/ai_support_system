@@ -5,6 +5,8 @@ from app.domain.events import (
     ConversationClosed,
     ConversationCreated,
     ConversationEscalated,
+    ConversationMarkedForReview,
+    ConversationReturnedToAI,
     OperatorAssigned,
 )
 from app.models.conversation import Channel, Conversation, Priority, Status
@@ -95,9 +97,26 @@ class ConversationService:
         if conversation is not None:
             self.uow.add_event(ConversationClosed(str(conversation.id)))
         return conversation
-    
+
     async def back_to_ai(self, conversation_id: int) -> Conversation | None:
-        return await self.uow.conversation.back_to_ai(conversation_id)
-        
+        conversation_before = await self.uow.conversation.get_conversation_by_id(conversation_id)
+        if conversation_before is None:
+            return None
+
+        previous_operator_id = conversation_before.operator_id
+        conversation = await self.uow.conversation.back_to_ai(conversation_id)
+        if conversation is not None:
+            self.uow.add_event(
+                ConversationReturnedToAI(
+                    str(conversation.id),
+                    str(previous_operator_id) if previous_operator_id is not None else "",
+                )
+            )
+        return conversation
+
     async def mark_conversation_for_review(self, conversation_id: int) -> Conversation | None:
-        return await self.uow.conversation.mark_conversation_for_review(conversation_id)
+        conversation = await self.uow.conversation.mark_conversation_for_review(conversation_id)
+        if conversation is not None:
+            self.uow.add_event(ConversationMarkedForReview(str(conversation.id)))
+            self.uow.add_event(ConversationEscalated(str(conversation.id)))
+        return conversation
