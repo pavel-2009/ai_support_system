@@ -6,6 +6,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.state_machine import ConversationStateMachine
 from app.models.conversation import (
     AuditLog,
     Channel,
@@ -173,6 +174,8 @@ class ConversationRepository:
             return None
 
         old_status = conversation.status
+        if not ConversationStateMachine.can_transition(old_status, new_status):
+            return None
         conversation.status = new_status
         await self._create_audit_log(
             conversation_id=conversation.id,
@@ -205,6 +208,8 @@ class ConversationRepository:
 
         previous_operator_id = conversation.operator_id
         previous_status = conversation.status
+        if not ConversationStateMachine.can_transition(previous_status, Status.WAITING_FOR_OPERATOR):
+            return None
 
         conversation.operator_id = operator_id
         conversation.status = Status.WAITING_FOR_OPERATOR
@@ -262,6 +267,8 @@ class ConversationRepository:
 
         old_status = conversation.status
         current_operator_id = conversation.operator_id
+        if not ConversationStateMachine.can_transition(old_status, Status.CLOSED):
+            return None
         conversation.status = Status.CLOSED
         conversation.closed_at = datetime.utcnow()
 
@@ -302,6 +309,8 @@ class ConversationRepository:
 
         old_status = conversation.status
         current_operator_id = conversation.operator_id
+        if not ConversationStateMachine.can_transition(old_status, Status.OPEN):
+            return None
         conversation.status = Status.OPEN
         conversation.operator_id = None
 
