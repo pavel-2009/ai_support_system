@@ -1,6 +1,6 @@
 """Class for state machine."""
 
-from app.models.conversation import Status
+from app.models.conversation import Conversation, Status
 
 
 STATE_GRAPH = {
@@ -14,9 +14,23 @@ STATE_GRAPH = {
 
 
 class ConversationStateMachine:
-    """Validate conversation transitions without owning conversation state."""
+    """Apply valid conversation transitions to the domain object."""
 
     @staticmethod
     def can_transition(current_state: Status, new_state: Status) -> bool:
         """Return whether the requested transition is allowed."""
         return new_state in STATE_GRAPH.get(current_state, [])
+
+    @classmethod
+    def transition(
+        cls,
+        conversation: Conversation,
+        new_state: Status,
+    ) -> Status | None:
+        """Change a conversation status and return its previous status."""
+        previous_state = conversation.status
+        if not cls.can_transition(previous_state, new_state):
+            return None
+
+        conversation.status = new_state
+        return previous_state

@@ -7,7 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.conversation import Channel, Priority
+from app.models.conversation import AuditLog, Channel, Priority
+from sqlalchemy import select
 from app.schemas.message import MessageCreate, MessageGet
 
 
@@ -106,6 +107,18 @@ class TestMessageRepository:
         updated = await repo.mark_conversation_for_review(conversation.id)
         assert updated is not None
         assert updated.status == Status.ESCALATED
+
+        audit_log = (
+            await async_session.execute(
+                select(AuditLog).where(
+                    AuditLog.conversation_id == conversation.id,
+                    AuditLog.action == "conversation_marked_for_review",
+                )
+            )
+        ).scalar_one()
+        assert audit_log.action == "conversation_marked_for_review"
+        assert audit_log.from_status == Status.OPEN
+        assert audit_log.to_status == Status.ESCALATED
 
         missing = await repo.mark_conversation_for_review(999999)
         assert missing is None
