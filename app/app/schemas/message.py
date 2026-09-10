@@ -17,7 +17,7 @@ class MessageGet(BaseModel):
     id: int = Field(..., description="ID сообщения")
     conversation_id: int = Field(..., description="ID беседы, к которой относится сообщение")
     sender_type: str = Field(..., description="Тип отправителя (например, 'user' или 'agent')")
-    sender_id: int = Field(..., description="ID отправителя")
+    sender_id: int | None = Field(None, description="ID отправителя; отсутствует для AI-сообщений")
     content: str = Field(..., description="Содержимое сообщения")
     is_auto_reply: bool = Field(..., description="Флаг автоматического ответа")
     confidence: float | None = Field(None, description="Уровень уверенности для автоответов")
