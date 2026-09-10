@@ -9,4 +9,5 @@ STATE_GRAPH = {
     Status.ESCALATED: [Status.WAITING_FOR_OPERATOR],
     Status.WAITING_FOR_OPERATOR: [Status.WAITING_FOR_USER, Status.OPEN],
     Status.WAITING_FOR_USER: [Status.WAITING_FOR_OPERATOR, Status.PENDING_AI],
+    Status.CLOSED: [],
 }
