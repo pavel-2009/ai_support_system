@@ -20,15 +20,15 @@ from app.services.message_service import MessageService
 logger = get_logger(__name__)
 
 
-@celery_app.task
-def process_llm_task(conversation_id: int) -> str:
-    """Обработать LLM-запрос ровно один раз."""
+@celery_app.task(bind=True)
+def process_llm_task(task, conversation_id: int) -> str:
+    """Обработать LLM-запрос с повтором при временной ошибке."""
     logger.info("CELERY LLM START: conversation_id=%s", conversation_id)
     try:
         asyncio.run(_process_llm_task_async(conversation_id))
-    except Exception:
+    except Exception as exc:
         logger.exception("CELERY LLM FAILED: conversation_id=%s", conversation_id)
-        raise
+        raise task.retry(exc=exc)
 
     logger.info("CELERY LLM SUCCESS: conversation_id=%s", conversation_id)
     return "ok"

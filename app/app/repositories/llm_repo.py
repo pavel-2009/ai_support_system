@@ -164,7 +164,7 @@ class LLMRepository:
             .order_by(Message.created_at.desc())
             .limit(5)
         )
-        messages = list(reversed(result.scalars().all()))
+        messages = list(reversed(result.scalars().all()))[:5]
         return self._generate_messages_history(messages)
 
     async def get_llm_response(
