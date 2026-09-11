@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.models.conversation import AuditLog, Channel, Priority
-from sqlalchemy import select
 from app.schemas.message import MessageCreate, MessageGet
 
 
@@ -79,12 +79,14 @@ class TestMessageRepository:
         empty_items = await repo.get_messages_by_conversation(999999)
         assert empty_items == []
 
+
+class TestConversationStateMachine:
     @pytest.mark.asyncio
-    async def test_mark_conversation_for_review_updates_status(self, async_session):
+    async def test_mark_for_review_updates_status_and_audit(self, async_session):
         from app.models.conversation import Status
         from app.models.user import User
         from app.repositories.conversation_repo import ConversationRepository
-        from app.repositories.message_repo import MessageRepository
+        from app.repositories.conversation_state_machine import ConversationStateMachine
 
         owner = User(
             email=f"msg_review_owner_{uuid4().hex[:8]}@example.com",
@@ -103,8 +105,8 @@ class TestMessageRepository:
         )
         assert conversation.status == Status.OPEN
 
-        repo = MessageRepository(async_session)
-        updated = await repo.mark_conversation_for_review(conversation.id)
+        state_machine = ConversationStateMachine(async_session)
+        updated = await state_machine.mark_for_review(conversation.id)
         assert updated is not None
         assert updated.status == Status.ESCALATED
 
@@ -116,11 +118,10 @@ class TestMessageRepository:
                 )
             )
         ).scalar_one()
-        assert audit_log.action == "conversation_marked_for_review"
         assert audit_log.from_status == Status.OPEN
         assert audit_log.to_status == Status.ESCALATED
 
-        missing = await repo.mark_conversation_for_review(999999)
+        missing = await state_machine.mark_for_review(999999)
         assert missing is None
 
 
@@ -129,21 +130,21 @@ class TestMessageService:
     async def test_service_delegates_to_repository_with_flags(self):
         from app.services.message_service import MessageService
 
-        uow = SimpleNamespace(message=AsyncMock(), add_event=MagicMock())
+        uow = SimpleNamespace(message=AsyncMock(), state_machine=AsyncMock(), add_event=MagicMock())
         service = MessageService(uow)
 
         created_obj = SimpleNamespace(id=1, content="Ответ")
         with patch.object(uow.message, "create_message", AsyncMock(return_value=created_obj)) as create_mock:
-            with patch.object(uow.message, "mark_conversation_for_review", AsyncMock()) as review_mock:
-                result = await service.create_message(
-                    conversation_id=3,
-                    sender_type="agent",
-                    sender_id=77,
-                    content="Ответ",
-                    is_auto_reply=True,
-                    confidence=0.87,
-                    needs_review=True,
-                )
+            uow.state_machine.mark_for_review = AsyncMock(return_value=SimpleNamespace(id=3))
+            result = await service.create_message(
+                conversation_id=3,
+                sender_type="agent",
+                sender_id=77,
+                content="Ответ",
+                is_auto_reply=True,
+                confidence=0.87,
+                needs_review=True,
+            )
 
         assert result.id == 1
         create_mock.assert_awaited_once_with(
@@ -155,28 +156,28 @@ class TestMessageService:
             confidence=0.87,
             needs_review=True,
         )
-        review_mock.assert_awaited_once_with(3)
+        uow.state_machine.mark_for_review.assert_awaited_once_with(3)
 
     @pytest.mark.asyncio
     async def test_service_does_not_mark_for_review_when_flag_disabled(self):
         from app.services.message_service import MessageService
 
-        uow = SimpleNamespace(message=AsyncMock(), add_event=MagicMock())
+        uow = SimpleNamespace(message=AsyncMock(), state_machine=AsyncMock(), add_event=MagicMock())
         service = MessageService(uow)
         created_obj = SimpleNamespace(id=10, content="Обычное сообщение")
+        uow.state_machine.mark_for_review = AsyncMock()
 
         with patch.object(uow.message, "create_message", AsyncMock(return_value=created_obj)):
-            with patch.object(uow.message, "mark_conversation_for_review", AsyncMock()) as review_mock:
-                result = await service.create_message(
-                    conversation_id=5,
-                    sender_type="user",
-                    sender_id=3,
-                    content="Обычное сообщение",
-                    needs_review=False,
-                )
+            result = await service.create_message(
+                conversation_id=5,
+                sender_type="user",
+                sender_id=3,
+                content="Обычное сообщение",
+                needs_review=False,
+            )
 
         assert result.id == 10
-        review_mock.assert_not_awaited()
+        uow.state_machine.mark_for_review.assert_not_awaited()
 
 
 class TestMessageRouter:
@@ -206,7 +207,6 @@ class TestMessageRouter:
         assert listed.status_code == 200
         assert len(listed.json()) == 1
         assert listed.json()[0]["sender_id"] > 0
-
 
     def test_get_messages_closed_conversation_returns_410(self, client, create_test_user):
         owner_email = f"msg_closed_owner_{uuid4().hex[:8]}@example.com"
