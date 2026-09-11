@@ -1,7 +1,6 @@
 """Repository-like state machine for conversation lifecycle transitions."""
 
 from datetime import datetime
-from enum import Enum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,22 +26,12 @@ STATE_GRAPH = {
 }
 
 
-class ConversationTransition(str, Enum):
-    """Business operations that may change a conversation status."""
-
-    ESCALATE = "escalate"
-    ASSIGN_OPERATOR = "assign_operator"
-    CLOSE = "close"
-    BACK_TO_AI = "back_to_ai"
-    MARK_FOR_REVIEW = "mark_for_review"
-
-
 class ConversationStateMachine:
-    """Own conversation state transitions and persist their results.
+    """Own conversation status transitions and persist their results.
 
-    Unlike a normal repository, this component is the only persistence boundary
-    allowed to change conversation status. It is created by UnitOfWork and uses
-    the UnitOfWork session, so transitions participate in the same transaction.
+    This is intentionally the only persistence boundary allowed to mutate
+    conversation status. It is created by UnitOfWork and uses the UnitOfWork
+    session, so transitions participate in the same transaction.
     """
 
     def __init__(self, session: AsyncSession):
