@@ -9,6 +9,7 @@ from app.core.event_bus import event_bus
 from app.core.logging import get_logger
 from app.domain.events import DomainEvent
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.conversation_state_machine import ConversationStateMachine
 from app.repositories.message_repo import MessageRepository
 from app.repositories.user_repo import UserRepository
 
@@ -33,6 +34,7 @@ class UnitOfWork:
         self.users = UserRepository(self.session)
         self.message = MessageRepository(self.session)
         self.conversation = ConversationRepository(self.session)
+        self.state_machine = ConversationStateMachine(self.session)
         logger.debug("DB UOW OPEN: session_id=%s", id(self.session))
         return self
 
