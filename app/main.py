@@ -1,6 +1,7 @@
 """Точка входа в приложение FastAPI."""
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from redis import Redis
 from sqlalchemy import text
@@ -36,6 +37,14 @@ app = FastAPI(
     redoc_url=settings.REDOC_URL,
     openapi_url=settings.OPENAPI_URL,
     root_path=settings.API_PREFIX,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(users_router)

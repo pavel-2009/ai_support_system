@@ -99,6 +99,13 @@ services:
       ollama-model:
         condition: service_completed_successfully
 
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - web
+
 volumes:
   postgres_data:
   ollama_data:
