@@ -1,26 +1,13 @@
 """Репозиторий для работы с диалогами."""
 
-from datetime import datetime
-
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.state_machine import ConversationStateMachine
-from app.models.conversation import (
-    AuditLog,
-    Channel,
-    Conversation,
-    ConversationOperatorLink,
-    Priority,
-    Status,
-)
-from app.models.message import Message
-from app.models.user import User
+from app.models.conversation import AuditLog, Channel, Conversation, Priority, Status
 
 
 class ConversationRepository:
-    """Репозиторий для работы с диалогами."""
+    """Репозиторий для CRUD и query-операций с диалогами."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -31,8 +18,7 @@ class ConversationRepository:
         priority: Priority,
         channel: Channel,
     ) -> Conversation:
-        """Создание нового диалога с начальным статусом OPEN и записью в аудит лог."""
-        
+        """Создать новый диалог."""
         new_conversation = Conversation(
             user_id=user_id,
             priority=priority,
@@ -41,18 +27,19 @@ class ConversationRepository:
         )
         self.session.add(new_conversation)
         await self.session.flush()
-        await self._create_audit_log(
-            conversation_id=new_conversation.id,
-            action="conversation_created",
-            actor_id=user_id,
-            to_status=Status.OPEN,
+        self.session.add(
+            AuditLog(
+                conversation_id=new_conversation.id,
+                action="conversation_created",
+                actor_id=user_id,
+                to_status=Status.OPEN,
+            )
         )
         await self.session.refresh(new_conversation)
         return new_conversation
 
     async def get_conversation_by_id(self, conversation_id: int) -> Conversation | None:
         """Получить диалог по ID."""
-        
         result = await self.session.execute(
             select(Conversation).where(Conversation.id == conversation_id)
         )
@@ -69,8 +56,7 @@ class ConversationRepository:
         operator_id_filter: int | None = None,
         participant_id: int | None = None,
     ) -> list[Conversation]:
-        """Получить список диалогов с простыми фильтрами и пагинацией."""
-        
+        """Получить список диалогов с фильтрами и пагинацией."""
         query = select(Conversation)
 
         if participant_id is not None:
@@ -103,8 +89,7 @@ class ConversationRepository:
         operator_id_filter: int | None = None,
         participant_id: int | None = None,
     ) -> int:
-        """Посчитать количество диалогов по тем же фильтрам, что и list_conversations."""
-        
+        """Посчитать количество диалогов по фильтрам."""
         query = select(func.count(Conversation.id))
 
         if participant_id is not None:
@@ -126,10 +111,8 @@ class ConversationRepository:
         result = await self.session.execute(query)
         return int(result.scalar_one())
 
-
     async def get_active_queue(self) -> list[Conversation]:
-        """Получить список диалогов в очереди, отсортированных по приоритету и времени создания."""
-        
+        """Получить очередь эскалированных диалогов."""
         priority_order = case(
             (Conversation.priority == Priority.HIGH, 3),
             (Conversation.priority == Priority.MEDIUM, 2),
@@ -141,190 +124,3 @@ class ConversationRepository:
             .order_by(priority_order.desc(), Conversation.created_at.asc())
         )
         return list(result.scalars().all())
-
-    async def _create_audit_log(
-        self,
-        conversation_id: int,
-        action: str,
-        actor_id: int | None = None,
-        from_status: Status | None = None,
-        to_status: Status | None = None,
-    ) -> None:
-        """Создать запись в аудит логе для данного действия с указанием статусов до и после, если применимо."""
-        
-        self.session.add(
-            AuditLog(
-                conversation_id=conversation_id,
-                actor_id=actor_id,
-                action=action,
-                from_status=from_status,
-                to_status=to_status,
-            )
-        )
-
-    async def update_conversation_status(
-        self,
-        conversation_id: int,
-        new_status: Status,
-    ) -> Conversation | None:
-        """Обновить статус диалога с записью в аудит лог."""
-        
-        conversation = await self.get_conversation_by_id(conversation_id)
-        if conversation is None:
-            return None
-
-        old_status = ConversationStateMachine.transition(conversation, new_status)
-        if old_status is None:
-            return None
-        await self._create_audit_log(
-            conversation_id=conversation.id,
-            action="status_changed",
-            from_status=old_status,
-            to_status=new_status,
-        )
-        await self.session.flush()
-        await self.session.refresh(conversation)
-        return conversation
-
-
-    async def assign_operator(self, conversation_id: int, operator_id: int) -> Conversation | None:
-        """Назначить оператора на диалог, обновив статус и записав в аудит лог."""
-        
-        conversation = await self.get_conversation_by_id(conversation_id)
-        if conversation is None:
-            return None
-        
-        if conversation.status != Status.ESCALATED and conversation.operator_id is not None:
-            return None
-
-        operator = (
-            await self.session.execute(select(User).where(User.id == operator_id))
-        ).scalar_one_or_none()
-        if operator is None:
-            return None
-        if operator.active_conversations_count >= settings.MAX_OPERATOR_ACTIVE_CONVERSATIONS:
-            return None
-
-        previous_operator_id = conversation.operator_id
-        previous_status = ConversationStateMachine.transition(
-            conversation,
-            Status.WAITING_FOR_OPERATOR,
-        )
-        if previous_status is None:
-            return None
-
-        conversation.operator_id = operator_id
-
-        if previous_operator_id is not None and previous_operator_id != operator_id:
-            previous_operator = (
-                await self.session.execute(select(User).where(User.id == previous_operator_id))
-            ).scalar_one_or_none()
-            if previous_operator is not None and previous_operator.active_conversations_count > 0:
-                previous_operator.active_conversations_count -= 1
-
-        operator.active_conversations_count += 1
-        active_links = (
-            await self.session.execute(
-                select(ConversationOperatorLink).where(
-                    ConversationOperatorLink.conversation_id == conversation_id,
-                    ConversationOperatorLink.is_active.is_(True),
-                )
-            )
-        ).scalars().all()
-        for link in active_links:
-            link.is_active = False
-            link.unassigned_at = datetime.utcnow()
-
-        self.session.add(
-            ConversationOperatorLink(
-                conversation_id=conversation_id,
-                operator_id=operator_id,
-                is_active=True,
-            )
-        )
-        await self._create_audit_log(
-            conversation_id=conversation.id,
-            actor_id=operator_id,
-            action="operator_assigned",
-            from_status=previous_status,
-            to_status=Status.WAITING_FOR_OPERATOR,
-        )
-        if previous_operator_id is not None and previous_operator_id != operator_id:
-            await self._create_audit_log(
-                conversation_id=conversation.id,
-                actor_id=previous_operator_id,
-                action="operator_unassigned",
-            )
-        await self.session.flush()
-        await self.session.refresh(conversation)
-        return conversation
-
-    async def close_conversation(self, conversation_id: int) -> Conversation | None:
-        """Закрыть диалог, установив статус CLOSED и время закрытия."""
-        
-        conversation = await self.get_conversation_by_id(conversation_id)
-        if conversation is None:
-            return None
-
-        current_operator_id = conversation.operator_id
-        old_status = ConversationStateMachine.transition(conversation, Status.CLOSED)
-        if old_status is None:
-            return None
-        conversation.closed_at = datetime.utcnow()
-
-        if current_operator_id is not None:
-            operator = (
-                await self.session.execute(select(User).where(User.id == current_operator_id))
-            ).scalar_one_or_none()
-            if operator is not None and operator.active_conversations_count > 0:
-                operator.active_conversations_count -= 1
-        await self._create_audit_log(
-            conversation_id=conversation.id,
-            action="conversation_closed",
-            from_status=old_status,
-            to_status=Status.CLOSED,
-        )
-        await self.session.flush()
-        await self.session.refresh(conversation)
-        return conversation
-    
-    
-    async def back_to_ai(self, conversation_id: int) -> Conversation | None:
-        """Перевести диалог обратно в очередь ИИ, установив статус OPEN и очистив оператора."""
-        
-        conversation = await self.get_conversation_by_id(conversation_id)
-        if conversation is None:
-            return None
-        
-        # Проверяем, что диалог в статусе WAITING_FOR_OPERATOR и назначен оператору
-        if conversation.status != Status.WAITING_FOR_OPERATOR or conversation.operator_id is None:
-            return None
-        
-        # Проверяем, что последнее сообщение в диалоге было от оператора
-        last_message = (await self.session.execute(
-            select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(1)
-        )).scalar_one_or_none()
-        if last_message is None or last_message.sender_type != "operator":
-            return None
-
-        current_operator_id = conversation.operator_id
-        old_status = ConversationStateMachine.transition(conversation, Status.OPEN)
-        if old_status is None:
-            return None
-        conversation.operator_id = None
-
-        if current_operator_id is not None:
-            operator = (
-                await self.session.execute(select(User).where(User.id == current_operator_id))
-            ).scalar_one_or_none()
-            if operator is not None and operator.active_conversations_count > 0:
-                operator.active_conversations_count -= 1
-        await self._create_audit_log(
-            conversation_id=conversation.id,
-            action="back_to_ai",
-            from_status=old_status,
-            to_status=Status.OPEN,
-        )
-        await self.session.flush()
-        await self.session.refresh(conversation)
-        return conversation

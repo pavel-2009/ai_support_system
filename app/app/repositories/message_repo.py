@@ -4,8 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.core.state_machine import ConversationStateMachine
-from app.models.conversation import AuditLog, Conversation, Status
+from app.models.conversation import Conversation, Status
 from app.models.message import Message
 from app.models.user import UserRole
 
@@ -14,7 +13,7 @@ logger = get_logger(__name__)
 
 
 class MessageRepository:
-    """Репозиторий для работы с сообщениями."""
+    """Репозиторий для CRUD и query-операций с сообщениями."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -78,37 +77,3 @@ class MessageRepository:
         messages = result.scalars().all()
         logger.info("DB SELECT messages successful: conversation_id=%s count=%s", conversation_id, len(messages))
         return messages
-
-    async def mark_conversation_for_review(self, conversation_id: int) -> Conversation | None:
-        """Пометить диалог на ревью оператором, эскалируя его статус."""
-        logger.info("DB UPDATE conversation status: id=%s -> %s", conversation_id, Status.ESCALATED)
-        result = await self.session.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
-        )
-        conversation = result.scalar_one_or_none()
-        if conversation is None:
-            logger.warning("DB UPDATE skipped: conversation %s not found", conversation_id)
-            return None
-
-        previous_status = ConversationStateMachine.transition(conversation, Status.ESCALATED)
-        if previous_status is None:
-            logger.warning(
-                "DB UPDATE rejected: conversation %s cannot transition from %s to %s",
-                conversation_id,
-                conversation.status,
-                Status.ESCALATED,
-            )
-            return None
-
-        self.session.add(
-            AuditLog(
-                conversation_id=conversation.id,
-                action="conversation_marked_for_review",
-                from_status=previous_status,
-                to_status=Status.ESCALATED,
-            )
-        )
-        await self.session.flush()
-        await self.session.refresh(conversation)
-        logger.info("DB UPDATE conversation successful: id=%s status=%s", conversation_id, conversation.status)
-        return conversation

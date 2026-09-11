@@ -1,29 +1,24 @@
-"""Базовые тесты для conversation репозитория, сервиса и роутера."""
+"""Базовые тесты для conversation state machine, репозитория, сервиса и роутера."""
+
+import asyncio
 
 import pytest
 from sqlalchemy import select
-import asyncio
 
 from app.models.conversation import AuditLog, Channel, ConversationOperatorLink, Priority, Status
 from app.models.user import UserRole
 
 
-def test_state_machine_mutates_only_allowed_transitions():
-    from app.core.state_machine import ConversationStateMachine
-    from app.models.conversation import Conversation
+def test_state_machine_rejects_invalid_transition():
+    from app.repositories.conversation_state_machine import ConversationStateMachine
 
-    conversation = Conversation(status=Status.OPEN)
-
-    assert ConversationStateMachine.transition(conversation, Status.ESCALATED) == Status.OPEN
-    assert conversation.status == Status.ESCALATED
-
-    assert ConversationStateMachine.transition(conversation, Status.OPEN) is None
-    assert conversation.status == Status.ESCALATED
+    assert ConversationStateMachine.can_transition(Status.OPEN, Status.ESCALATED)
+    assert not ConversationStateMachine.can_transition(Status.ESCALATED, Status.OPEN)
 
 
 class TestConversationRepository:
     @pytest.mark.asyncio
-    async def test_repo_create_get_update_assign_close(self, async_session):
+    async def test_repo_create_get_only(self, async_session):
         from app.models.user import User
         from app.repositories.conversation_repo import ConversationRepository
 
@@ -33,16 +28,9 @@ class TestConversationRepository:
             fullname="Conv Repo User",
             hashed_password="hash",
         )
-        operator = User(
-            email="conv_repo_operator@test.com",
-            nickname="conv_repo_operator",
-            fullname="Conv Repo Operator",
-            hashed_password="hash",
-        )
-        async_session.add_all([user, operator])
+        async_session.add(user)
         await async_session.commit()
         await async_session.refresh(user)
-        await async_session.refresh(operator)
 
         repo = ConversationRepository(async_session)
         conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
@@ -53,11 +41,76 @@ class TestConversationRepository:
         assert fetched is not None
         assert fetched.user_id == user.id
 
-        updated = await repo.update_conversation_status(conv.id, Status.ESCALATED)
-        assert updated is not None
-        assert updated.status == Status.ESCALATED
+        # Status mutations intentionally do not belong to ConversationRepository.
+        assert not hasattr(repo, "update_conversation_status")
+        assert not hasattr(repo, "assign_operator")
+        assert not hasattr(repo, "close_conversation")
+        assert not hasattr(repo, "back_to_ai")
 
-        assigned = await repo.assign_operator(conv.id, operator.id)
+    @pytest.mark.asyncio
+    async def test_repo_active_queue_sorted_by_priority(self, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+        from app.repositories.conversation_state_machine import ConversationStateMachine
+
+        user = User(
+            email="conv_queue_user@test.com",
+            nickname="conv_queue_user",
+            fullname="Conv Queue User",
+            hashed_password="hash",
+        )
+        async_session.add(user)
+        await async_session.commit()
+        await async_session.refresh(user)
+
+        repo = ConversationRepository(async_session)
+        state_machine = ConversationStateMachine(async_session)
+        low = await repo.create_conversation(user.id, Priority.LOW, Channel.WEB)
+        medium = await repo.create_conversation(user.id, Priority.MEDIUM, Channel.API)
+        high = await repo.create_conversation(user.id, Priority.HIGH, Channel.EMAIL)
+
+        await state_machine.escalate(low.id)
+        await state_machine.escalate(medium.id)
+        await state_machine.escalate(high.id)
+        await state_machine.close(low.id)
+
+        queue = await repo.get_active_queue()
+        assert [conv.id for conv in queue] == [high.id, medium.id]
+
+
+class TestConversationStateMachine:
+    @pytest.mark.asyncio
+    async def test_assign_and_close_conversation(self, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+        from app.repositories.conversation_state_machine import ConversationStateMachine
+
+        user = User(
+            email="conv_sm_user@test.com",
+            nickname="conv_sm_user",
+            fullname="Conv SM User",
+            hashed_password="hash",
+        )
+        operator = User(
+            email="conv_sm_operator@test.com",
+            nickname="conv_sm_operator",
+            fullname="Conv SM Operator",
+            hashed_password="hash",
+            role=UserRole.OPERATOR,
+        )
+        async_session.add_all([user, operator])
+        await async_session.commit()
+        await async_session.refresh(user)
+        await async_session.refresh(operator)
+
+        repo = ConversationRepository(async_session)
+        state_machine = ConversationStateMachine(async_session)
+        conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
+
+        assert await state_machine.assign_operator(conv.id, operator.id) is None
+        assert await state_machine.escalate(conv.id) is not None
+
+        assigned = await state_machine.assign_operator(conv.id, operator.id)
         assert assigned is not None
         assert assigned.operator_id == operator.id
         assert assigned.status == Status.WAITING_FOR_OPERATOR
@@ -73,7 +126,7 @@ class TestConversationRepository:
         assert links[0].operator_id == operator.id
         assert links[0].is_active is True
 
-        closed = await repo.close_conversation(conv.id)
+        closed = await state_machine.close(conv.id)
         assert closed is not None
         assert closed.status == Status.CLOSED
 
@@ -86,35 +139,62 @@ class TestConversationRepository:
         assert "conversation_closed" in actions
 
     @pytest.mark.asyncio
-    async def test_repo_active_queue_sorted_by_priority(self, async_session):
+    async def test_assign_operator_respects_max_load(self, async_session):
         from app.models.user import User
         from app.repositories.conversation_repo import ConversationRepository
+        from app.repositories.conversation_state_machine import ConversationStateMachine
 
-        user = User(
-            email="conv_queue_user@test.com",
-            nickname="conv_queue_user",
-            fullname="Conv Queue User",
+        user = User(email="owner_max@test.com", nickname="owner_max", fullname="Owner Max", hashed_password="hash")
+        overloaded_operator = User(
+            email="op_max@test.com",
+            nickname="op_max",
+            fullname="Op Max",
             hashed_password="hash",
+            role=UserRole.OPERATOR,
+            active_conversations_count=5,
         )
-        async_session.add(user)
+        async_session.add_all([user, overloaded_operator])
         await async_session.commit()
         await async_session.refresh(user)
 
         repo = ConversationRepository(async_session)
-        low = await repo.create_conversation(user.id, Priority.LOW, Channel.WEB)
-        medium = await repo.create_conversation(user.id, Priority.MEDIUM, Channel.API)
-        high = await repo.create_conversation(user.id, Priority.HIGH, Channel.EMAIL)
-        
-        # Обновляем статусы диалогов для их добавления в активную очередь
-        await repo.update_conversation_status(low.id, Status.ESCALATED)
-        await repo.update_conversation_status(medium.id, Status.ESCALATED)
-        await repo.update_conversation_status(high.id, Status.ESCALATED)
-        
-        # Закрываем один диалог - он не должен появиться в очереди
-        await repo.update_conversation_status(low.id, Status.CLOSED)
+        state_machine = ConversationStateMachine(async_session)
+        conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
+        await state_machine.escalate(conv.id)
 
-        queue = await repo.get_active_queue()
-        assert [conv.id for conv in queue] == [high.id, medium.id]
+        assigned = await state_machine.assign_operator(conv.id, overloaded_operator.id)
+        assert assigned is None
+
+    @pytest.mark.asyncio
+    async def test_close_conversation_decrements_operator_load(self, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+        from app.repositories.conversation_state_machine import ConversationStateMachine
+
+        user = User(email="owner_dec@test.com", nickname="owner_dec", fullname="Owner Dec", hashed_password="hash")
+        operator = User(
+            email="op_dec@test.com",
+            nickname="op_dec",
+            fullname="Op Dec",
+            hashed_password="hash",
+            role=UserRole.OPERATOR,
+        )
+        async_session.add_all([user, operator])
+        await async_session.commit()
+        await async_session.refresh(user)
+        await async_session.refresh(operator)
+
+        repo = ConversationRepository(async_session)
+        state_machine = ConversationStateMachine(async_session)
+        conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
+        await state_machine.escalate(conv.id)
+        await state_machine.assign_operator(conv.id, operator.id)
+        await async_session.refresh(operator)
+        assert operator.active_conversations_count == 1
+
+        await state_machine.close(conv.id)
+        await async_session.refresh(operator)
+        assert operator.active_conversations_count == 0
 
 
 class TestConversationRouter:
@@ -200,7 +280,7 @@ class TestConversationRouter:
     def test_active_queue_for_admin(self, admin_client, create_test_user, client, async_session):
         from app.models.user import User
         from app.repositories.conversation_repo import ConversationRepository
-        from sqlalchemy import select
+        from app.repositories.conversation_state_machine import ConversationStateMachine
 
         create_test_user(email="queue_owner@example.com", password="TestPass123!", nickname="queueowner")
 
@@ -220,76 +300,20 @@ class TestConversationRouter:
             headers=owner_headers,
             json={"priority": "high", "channel": "api"},
         )
-        
-        # Получаем user_id по email
+
         async def get_and_update():
             result = await async_session.execute(
                 select(User).where(User.email == "queue_owner@example.com")
             )
             owner_user = result.scalar_one()
-            
             repo = ConversationRepository(async_session)
+            state_machine = ConversationStateMachine(async_session)
             convs = await repo.list_conversations(user_id_filter=owner_user.id, limit=10, offset=0)
             for conv in convs:
-                await repo.update_conversation_status(conv.id, Status.ESCALATED)
-        
+                await state_machine.escalate(conv.id)
+
         asyncio.run(get_and_update())
 
         queue_response = admin_client.get("/api/conversations/queue/active")
         assert queue_response.status_code == 200
         assert len(queue_response.json()) >= 2
-
-
-    @pytest.mark.asyncio
-    async def test_repo_assign_operator_respects_max_load(self, async_session):
-        from app.models.user import User
-        from app.repositories.conversation_repo import ConversationRepository
-
-        user = User(email="owner_max@test.com", nickname="owner_max", fullname="Owner Max", hashed_password="hash")
-        overloaded_operator = User(
-            email="op_max@test.com",
-            nickname="op_max",
-            fullname="Op Max",
-            hashed_password="hash",
-            role=UserRole.OPERATOR,
-            active_conversations_count=5,
-        )
-        async_session.add_all([user, overloaded_operator])
-        await async_session.commit()
-        await async_session.refresh(user)
-
-        repo = ConversationRepository(async_session)
-        conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
-        await repo.update_conversation_status(conv.id, Status.ESCALATED)
-
-        assigned = await repo.assign_operator(conv.id, overloaded_operator.id)
-        assert assigned is None
-
-    @pytest.mark.asyncio
-    async def test_close_conversation_decrements_operator_load(self, async_session):
-        from app.models.user import User
-        from app.repositories.conversation_repo import ConversationRepository
-
-        user = User(email="owner_dec@test.com", nickname="owner_dec", fullname="Owner Dec", hashed_password="hash")
-        operator = User(
-            email="op_dec@test.com",
-            nickname="op_dec",
-            fullname="Op Dec",
-            hashed_password="hash",
-            role=UserRole.OPERATOR,
-        )
-        async_session.add_all([user, operator])
-        await async_session.commit()
-        await async_session.refresh(user)
-        await async_session.refresh(operator)
-
-        repo = ConversationRepository(async_session)
-        conv = await repo.create_conversation(user.id, Priority.HIGH, Channel.API)
-        await repo.update_conversation_status(conv.id, Status.ESCALATED)
-        await repo.assign_operator(conv.id, operator.id)
-        await async_session.refresh(operator)
-        assert operator.active_conversations_count == 1
-
-        await repo.close_conversation(conv.id)
-        await async_session.refresh(operator)
-        assert operator.active_conversations_count == 0

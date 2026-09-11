@@ -95,7 +95,7 @@ class TestUserServiceExtended:
 
 class TestConversationServiceExtended:
     @pytest.mark.asyncio
-    async def test_service_update_assign_close_methods(self, async_session):
+    async def test_service_state_machine_methods(self, async_session):
         from app.core.uow import UnitOfWork
         from app.models.user import User
         from app.services.conversation_service import ConversationService
@@ -122,7 +122,7 @@ class TestConversationServiceExtended:
             service = ConversationService(uow)
             conv = await service.create_conversation(owner.id, Priority.MEDIUM, Channel.WEB)
 
-            escalated = await service.update_conversation_status(conv.id, Status.ESCALATED)
+            escalated = await service.escalate(conv.id)
             assert escalated is not None
             assert escalated.status == Status.ESCALATED
 
@@ -175,23 +175,18 @@ class TestRouterExtended:
         login = client.post("/api/auth/login", json={"email": user_email, "password": "TestPass123!"})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        # Не админ не может получить список пользователей
         get_all = client.get("/api/users/", headers=headers)
         assert get_all.status_code == 403
 
-        # Нельзя читать чужого пользователя по ID
         create_test_user(email=f"other_{uuid4().hex[:8]}@example.com", nickname=f"other_{uuid4().hex[:8]}")
         foreign = client.get("/api/users/999999", headers=headers)
         assert foreign.status_code in (403, 404)
 
-        # Ошибка логина конвертируется в 401
         bad_login = client.post("/api/auth/login", json={"email": user_email, "password": "WrongPass123!"})
         assert bad_login.status_code == 401
 
-        # Некорректный refresh-token конвертируется в 401
         bad_refresh = client.post("/api/auth/refresh", json={"refresh_token": "invalid.refresh.token"})
         assert bad_refresh.status_code == 401
-
 
     def test_admin_user_router_success_paths(self, admin_client):
         users = admin_client.get("/api/users/")

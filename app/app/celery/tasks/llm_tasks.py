@@ -9,7 +9,6 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
 from app.db import create_database_engine
-from app.models.conversation import Status
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
 from app.services.conversation_service import ConversationService
@@ -98,10 +97,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                 "LLM PIPELINE: confidence too low; escalating conversation_id=%s",
                 conversation_id,
             )
-            await conversation_service.update_conversation_status(
-                conversation_id=conversation_id,
-                new_status=Status.ESCALATED,
-            )
+            await conversation_service.escalate(conversation_id)
     finally:
         await database_engine.dispose()
         logger.debug(
