@@ -76,24 +76,21 @@ class ConversationService:
     async def get_active_queue(self) -> list[Conversation]:
         return await self.uow.conversation.get_active_queue()
 
-    async def update_conversation_status(
-        self,
-        conversation_id: int,
-        new_status: Status,
-    ) -> Conversation | None:
-        conversation = await self.uow.conversation.update_conversation_status(conversation_id, new_status)
-        if conversation is not None and new_status == Status.ESCALATED:
+    async def escalate(self, conversation_id: int) -> Conversation | None:
+        """Escalate a conversation through the state machine."""
+        conversation = await self.uow.state_machine.escalate(conversation_id)
+        if conversation is not None:
             self.uow.add_event(ConversationEscalated(str(conversation.id)))
         return conversation
 
     async def assign_operator(self, conversation_id: int, operator_id: int) -> Conversation | None:
-        conversation = await self.uow.conversation.assign_operator(conversation_id, operator_id)
+        conversation = await self.uow.state_machine.assign_operator(conversation_id, operator_id)
         if conversation is not None:
             self.uow.add_event(OperatorAssigned(str(conversation.id), str(operator_id)))
         return conversation
 
     async def close(self, conversation_id: int) -> Conversation | None:
-        conversation = await self.uow.conversation.close_conversation(conversation_id)
+        conversation = await self.uow.state_machine.close(conversation_id)
         if conversation is not None:
             self.uow.add_event(ConversationClosed(str(conversation.id)))
         return conversation
@@ -104,7 +101,7 @@ class ConversationService:
             return None
 
         previous_operator_id = conversation_before.operator_id
-        conversation = await self.uow.conversation.back_to_ai(conversation_id)
+        conversation = await self.uow.state_machine.back_to_ai(conversation_id)
         if conversation is not None:
             self.uow.add_event(
                 ConversationReturnedToAI(
@@ -115,7 +112,7 @@ class ConversationService:
         return conversation
 
     async def mark_conversation_for_review(self, conversation_id: int) -> Conversation | None:
-        conversation = await self.uow.conversation.mark_conversation_for_review(conversation_id)
+        conversation = await self.uow.state_machine.mark_for_review(conversation_id)
         if conversation is not None:
             self.uow.add_event(ConversationMarkedForReview(str(conversation.id)))
             self.uow.add_event(ConversationEscalated(str(conversation.id)))
