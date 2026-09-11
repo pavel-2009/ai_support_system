@@ -2,7 +2,7 @@
 
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
-from app.domain.events import ConversationMarkedForReview, MessageSent
+from app.domain.events import ConversationEscalated, ConversationMarkedForReview, MessageSent
 
 
 logger = get_logger(__name__)
@@ -43,14 +43,13 @@ class MessageService:
             )
             return None
 
-        add_event = getattr(self.uow, "add_event", None)
         if needs_review:
-            updated_conversation = await self.uow.message.mark_conversation_for_review(conversation_id)
-            if updated_conversation is not None and add_event is not None:
-                add_event(ConversationMarkedForReview(str(conversation_id)))
+            updated_conversation = await self.uow.state_machine.mark_for_review(conversation_id)
+            if updated_conversation is not None:
+                self.uow.add_event(ConversationMarkedForReview(str(conversation_id)))
+                self.uow.add_event(ConversationEscalated(str(conversation_id)))
 
-        if add_event is not None:
-            add_event(MessageSent(str(new_message.id), str(conversation_id)))
+        self.uow.add_event(MessageSent(str(new_message.id), str(conversation_id)))
 
         logger.debug(
             "MESSAGE SERVICE CREATE OK: id=%s conversation_id=%s sender_type=%s",
