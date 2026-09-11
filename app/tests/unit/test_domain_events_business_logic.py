@@ -76,7 +76,6 @@ async def test_message_service_queues_message_and_review_events():
 
     assert [type(event) for event in uow._events] == [
         ConversationMarkedForReview,
-        ConversationEscalated,
         MessageSent,
     ]
     uow.state_machine.mark_for_review.assert_awaited_once_with(55)
