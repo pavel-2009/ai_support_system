@@ -17,7 +17,7 @@ from app.domain.events import (
     UserRegistered,
     UserUpdated,
 )
-from app.models.conversation import Channel, Priority, Status
+from app.models.conversation import Channel, Priority
 
 
 @pytest.mark.asyncio
@@ -25,20 +25,21 @@ async def test_conversation_service_queues_events_for_mutations():
     from app.services.conversation_service import ConversationService
 
     conversation = MagicMock(id=42, operator_id=7)
-    uow = SimpleNamespace(conversation=AsyncMock(), _events=[])
+    returned = MagicMock(id=42, operator_id=None)
+    uow = SimpleNamespace(conversation=AsyncMock(), state_machine=AsyncMock(), _events=[])
     uow.add_event = uow._events.append
     service = ConversationService(uow)
 
     uow.conversation.create_conversation.return_value = conversation
-    uow.conversation.update_conversation_status.return_value = conversation
-    uow.conversation.assign_operator.return_value = conversation
-    uow.conversation.close_conversation.return_value = conversation
     uow.conversation.get_conversation_by_id.return_value = conversation
-    uow.conversation.back_to_ai.return_value = MagicMock(id=42, operator_id=None)
-    uow.conversation.mark_conversation_for_review.return_value = conversation
+    uow.state_machine.escalate.return_value = conversation
+    uow.state_machine.assign_operator.return_value = conversation
+    uow.state_machine.close.return_value = conversation
+    uow.state_machine.back_to_ai.return_value = returned
+    uow.state_machine.mark_for_review.return_value = conversation
 
     await service.create_conversation(1, Priority.MEDIUM, Channel.WEB)
-    await service.update_conversation_status(42, Status.ESCALATED)
+    await service.escalate(42)
     await service.assign_operator(42, 9)
     await service.close(42)
     await service.back_to_ai(42)
@@ -53,6 +54,11 @@ async def test_conversation_service_queues_events_for_mutations():
         ConversationMarkedForReview,
         ConversationEscalated,
     ]
+    uow.state_machine.escalate.assert_awaited_once_with(42)
+    uow.state_machine.assign_operator.assert_awaited_once_with(42, 9)
+    uow.state_machine.close.assert_awaited_once_with(42)
+    uow.state_machine.back_to_ai.assert_awaited_once_with(42)
+    uow.state_machine.mark_for_review.assert_awaited_once_with(42)
 
 
 @pytest.mark.asyncio
@@ -60,18 +66,20 @@ async def test_message_service_queues_message_and_review_events():
     from app.services.message_service import MessageService
 
     message = MagicMock(id=100)
-    uow = SimpleNamespace(message=AsyncMock(), _events=[])
+    uow = SimpleNamespace(message=AsyncMock(), state_machine=AsyncMock(), _events=[])
     uow.add_event = uow._events.append
     service = MessageService(uow)
     uow.message.create_message.return_value = message
-    uow.message.mark_conversation_for_review.return_value = MagicMock(id=55)
+    uow.state_machine.mark_for_review.return_value = MagicMock(id=55)
 
     await service.create_message(55, "user", 1, "hello", needs_review=True)
 
     assert [type(event) for event in uow._events] == [
         ConversationMarkedForReview,
+        ConversationEscalated,
         MessageSent,
     ]
+    uow.state_machine.mark_for_review.assert_awaited_once_with(55)
 
 
 @pytest.mark.asyncio
