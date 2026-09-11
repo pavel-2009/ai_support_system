@@ -5,4 +5,4 @@ down:
 		docker compose down
 
 test:
-		pytest app/tests/
+		pytest app/tests/ --cov=app --cov-report=term-missing

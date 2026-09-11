@@ -6,6 +6,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.state_machine import ConversationStateMachine
 from app.models.conversation import (
     AuditLog,
     Channel,
@@ -172,8 +173,9 @@ class ConversationRepository:
         if conversation is None:
             return None
 
-        old_status = conversation.status
-        conversation.status = new_status
+        old_status = ConversationStateMachine.transition(conversation, new_status)
+        if old_status is None:
+            return None
         await self._create_audit_log(
             conversation_id=conversation.id,
             action="status_changed",
@@ -204,10 +206,14 @@ class ConversationRepository:
             return None
 
         previous_operator_id = conversation.operator_id
-        previous_status = conversation.status
+        previous_status = ConversationStateMachine.transition(
+            conversation,
+            Status.WAITING_FOR_OPERATOR,
+        )
+        if previous_status is None:
+            return None
 
         conversation.operator_id = operator_id
-        conversation.status = Status.WAITING_FOR_OPERATOR
 
         if previous_operator_id is not None and previous_operator_id != operator_id:
             previous_operator = (
@@ -260,9 +266,10 @@ class ConversationRepository:
         if conversation is None:
             return None
 
-        old_status = conversation.status
         current_operator_id = conversation.operator_id
-        conversation.status = Status.CLOSED
+        old_status = ConversationStateMachine.transition(conversation, Status.CLOSED)
+        if old_status is None:
+            return None
         conversation.closed_at = datetime.utcnow()
 
         if current_operator_id is not None:
@@ -300,9 +307,10 @@ class ConversationRepository:
         if last_message is None or last_message.sender_type != "operator":
             return None
 
-        old_status = conversation.status
         current_operator_id = conversation.operator_id
-        conversation.status = Status.OPEN
+        old_status = ConversationStateMachine.transition(conversation, Status.OPEN)
+        if old_status is None:
+            return None
         conversation.operator_id = None
 
         if current_operator_id is not None:

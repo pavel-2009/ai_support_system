@@ -8,6 +8,19 @@ from app.models.conversation import AuditLog, Channel, ConversationOperatorLink,
 from app.models.user import UserRole
 
 
+def test_state_machine_mutates_only_allowed_transitions():
+    from app.core.state_machine import ConversationStateMachine
+    from app.models.conversation import Conversation
+
+    conversation = Conversation(status=Status.OPEN)
+
+    assert ConversationStateMachine.transition(conversation, Status.ESCALATED) == Status.OPEN
+    assert conversation.status == Status.ESCALATED
+
+    assert ConversationStateMachine.transition(conversation, Status.OPEN) is None
+    assert conversation.status == Status.ESCALATED
+
+
 class TestConversationRepository:
     @pytest.mark.asyncio
     async def test_repo_create_get_update_assign_close(self, async_session):

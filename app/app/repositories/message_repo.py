@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.models.conversation import Conversation, Status
+from app.core.state_machine import ConversationStateMachine
+from app.models.conversation import AuditLog, Conversation, Status
 from app.models.message import Message
 from app.models.user import UserRole
 
@@ -89,7 +90,24 @@ class MessageRepository:
             logger.warning("DB UPDATE skipped: conversation %s not found", conversation_id)
             return None
 
-        conversation.status = Status.ESCALATED
+        previous_status = ConversationStateMachine.transition(conversation, Status.ESCALATED)
+        if previous_status is None:
+            logger.warning(
+                "DB UPDATE rejected: conversation %s cannot transition from %s to %s",
+                conversation_id,
+                conversation.status,
+                Status.ESCALATED,
+            )
+            return None
+
+        self.session.add(
+            AuditLog(
+                conversation_id=conversation.id,
+                action="conversation_marked_for_review",
+                from_status=previous_status,
+                to_status=Status.ESCALATED,
+            )
+        )
         await self.session.flush()
         await self.session.refresh(conversation)
         logger.info("DB UPDATE conversation successful: id=%s status=%s", conversation_id, conversation.status)
