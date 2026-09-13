@@ -8,6 +8,7 @@ from app.core.dependencies import (
     require_authenticated_user,
 )
 from app.core.logging import get_logger
+from app.core.rate_limit import limiter, get_user_identifier
 from app.models.conversation import Channel, Conversation, Priority, Status
 from app.models.user import User
 from app.schemas.conversation import (
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 
 
 @router.post("/", response_model=ConversationGet, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute", key_func=get_user_identifier)
 async def create_conversation(
     conversation_data: ConversationCreate,
     current_user: User = Depends(require_authenticated_user),
@@ -37,6 +39,7 @@ async def create_conversation(
 
 
 @router.get("/", response_model=ConversationListResponse)
+@limiter.limit("100/minute", key_func=get_user_identifier)
 async def get_conversations(
     page: int = Query(default=1, ge=1, description="Номер страницы"),
     size: int = Query(default=20, ge=1, le=100, description="Размер страницы"),
