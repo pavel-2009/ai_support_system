@@ -24,4 +24,4 @@ def get_user_identifier(request: Request) -> str:
     
 
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+limiter = Limiter(key_func=get_user_identifier, default_limits=["100/minute"])
