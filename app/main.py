@@ -2,6 +2,8 @@
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from fastapi.responses import PlainTextResponse
 from redis import Redis
 from sqlalchemy import text
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.celery.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.rate_limit import limiter
 from app.db import get_async_session
 import app.services.event_handlers  # noqa: F401
 from app.routers.users.conversation import router as conversation_router
@@ -38,6 +41,8 @@ app = FastAPI(
     openapi_url=settings.OPENAPI_URL,
     root_path=settings.API_PREFIX,
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

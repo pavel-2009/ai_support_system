@@ -118,6 +118,7 @@ async def delete_user(
 @auth_router.post("/register", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Регистрация")
 @limiter.limit("3/minute", key_func=get_user_identifier)
 async def register_user(
+    request: Request,
     data: UserCreate,
     user_service: UserService = Depends(get_user_service),
 ) -> UserGet:
