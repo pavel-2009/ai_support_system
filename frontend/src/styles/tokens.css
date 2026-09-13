@@ -1,0 +1,8 @@
+:root { --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; --bg-dark: #07090e; --bg-card: rgba(15,23,42,.75); --bg-sidebar: rgba(11,17,32,.85); --bg-input: rgba(15,23,42,.85); --border-glass: rgba(255,255,255,.08); --border-subtle: rgba(255,255,255,.05); --border-glass-focus: rgba(99,102,241,.5); --accent-primary: #6366f1; --accent-gradient: linear-gradient(135deg,#6366f1,#8b5cf6 50%,#a855f7); --accent-glow: rgba(99,102,241,.35); --text-primary: #f8fafc; --text-secondary: #94a3b8; --text-muted: #64748b; --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-xl: 24px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; overflow: hidden; background: var(--bg-dark); color: var(--text-primary); font-family: var(--font-main); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; }
+button:disabled { cursor: not-allowed; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { border-radius: 10px; background: rgba(255,255,255,.12); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.22); }
