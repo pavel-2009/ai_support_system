@@ -1,13 +1,11 @@
 """Базовые зависимости для приложения."""
 
 from fastapi import Depends, HTTPException, Path, status, Request
-from redis import Redis
 from fastapi.security import OAuth2PasswordBearer
 from collections.abc import AsyncIterator
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis_client
-from app.core.idempotency import IdempotencyKey
 from app.core.security import verify_access_token
 from app.core.uow import UnitOfWork
 from app.db import async_session
@@ -152,19 +150,22 @@ async def get_open_conversation_for_user(
 
 def get_idempotency_key(
     request: Request,
-    redis_client: Redis = Depends(get_redis_client),
-) -> bytes | None:
-    """Create an idempotency key service with the shared Redis client."""
+) -> str | None:
+    """Return a non-empty idempotency key from the request header."""
     key = request.headers.get("Idempotency-Key")
     if key is None:
         return None
-
-    idempotency_service = IdempotencyKey(redis_client)
-    if idempotency_service.exists(key):
-        cached_response = idempotency_service.get(key)
-        if cached_response:
-            return cached_response
-        
-    return None
+    key = key.strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key не может быть пустым.",
+        )
+    if len(key) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key слишком длинный.",
+        )
+    return key
 
 

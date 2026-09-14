@@ -177,6 +177,7 @@ LLM-запрос выполняется **один раз**. Ошибка зап
 
 ### Celery / Redis
 
+- `REDIS_URL`
 - `CELERY_BROKER_URL`
 - `CELERY_RESULT_BACKEND`
 
