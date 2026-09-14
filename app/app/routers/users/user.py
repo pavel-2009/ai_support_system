@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.core.dependencies import get_user_service, require_authenticated_user
 from app.core.logging import get_logger
 from app.core.security import create_tokens, verify_refresh_token
+from app.core.rate_limit import limiter, get_user_identifier
 from app.models.user import User
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserGet, UserLogin, UserUpdate
@@ -115,7 +116,9 @@ async def delete_user(
 
 
 @auth_router.post("/register", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Регистрация")
+@limiter.limit("3/minute", key_func=get_user_identifier)
 async def register_user(
+    request: Request,
     data: UserCreate,
     user_service: UserService = Depends(get_user_service),
 ) -> UserGet:
@@ -128,6 +131,7 @@ async def register_user(
 
 
 @auth_router.post("/login", response_model=Token, summary="Логин пользователя")
+@limiter.limit("5/minute", key_func=get_user_identifier)
 async def login_user(
     request: Request,
     user_service: UserService = Depends(get_user_service),

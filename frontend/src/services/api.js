@@ -15,7 +15,25 @@ export const clearStoredTokens = () => {
   localStorage.removeItem('user_info');
 };
 
-async function request(endpoint, options = {}) {
+async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return false;
+
+  const response = await fetch(`${API_BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) return false;
+
+  const tokens = await response.json();
+  if (!tokens.access_token) return false;
+  setStoredTokens(tokens.access_token, tokens.refresh_token);
+  return true;
+}
+
+async function request(endpoint, options = {}, allowRefresh = true) {
   const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -34,7 +52,16 @@ async function request(endpoint, options = {}) {
   });
 
   if (response.status === 401) {
-    // If unauthorized, clear token if it wasn't a login attempt
+    if (allowRefresh && !endpoint.includes('/auth/')) {
+      try {
+        if (await refreshAccessToken()) {
+          return request(endpoint, options, false);
+        }
+      } catch {
+        // Fall through to session cleanup when refresh fails.
+      }
+    }
+
     if (!endpoint.includes('/auth/login')) {
       clearStoredTokens();
       window.dispatchEvent(new Event('auth-expired'));

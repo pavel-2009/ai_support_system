@@ -13,6 +13,7 @@ from main import app
 from app.db import Base, get_async_session
 from app.core.dependencies import get_uow
 from app.core.uow import UnitOfWork
+from app.core.rate_limit import limiter
 from app.models.user import User, UserRole
 from app.core.security import hash_password
 
@@ -66,6 +67,7 @@ def client(async_session):
         yield test_client
     
     app.dependency_overrides.clear()
+    limiter._storage.reset()
 
 
 def _create_authenticated_client(async_session, user_email: str, user_role: UserRole = UserRole.USER):

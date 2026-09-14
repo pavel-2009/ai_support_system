@@ -1,6 +1,6 @@
 """Пользовательский роутер для работы с сообщениями."""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from app.core.dependencies import (
     get_message_service,
@@ -8,6 +8,7 @@ from app.core.dependencies import (
     require_authenticated_user,
 )
 from app.core.logging import get_logger
+from app.core.rate_limit import limiter, get_user_identifier
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.user import User
@@ -25,7 +26,9 @@ logger = get_logger(__name__)
     status_code=status.HTTP_201_CREATED,
     summary="Создать новое сообщение в беседе",
 )
+@limiter.limit("30/minute", key_func=get_user_identifier)
 async def send_message(
+    request: Request,
     message: MessageCreate,
     conversation: Conversation = Depends(get_open_conversation_for_user),
     current_user: User = Depends(require_authenticated_user),
