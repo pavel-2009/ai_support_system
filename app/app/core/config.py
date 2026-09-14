@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     LLM_ESCALATION_CONFIDENCE_THRESHOLD: float = 0.65
     LLM_TOKEN_LIMIT: int = 1024
 
+    # === Redis ===
+    REDIS_URL: str = "redis://redis:6379/0"
+
     # === Celery ===
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"

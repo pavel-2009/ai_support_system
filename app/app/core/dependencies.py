@@ -1,10 +1,13 @@
 """Базовые зависимости для приложения."""
 
-from fastapi import Depends, HTTPException, Path, status
+from fastapi import Depends, HTTPException, Path, status, Request
+from redis import Redis
 from fastapi.security import OAuth2PasswordBearer
 from collections.abc import AsyncIterator
 
 from app.core.logging import get_logger
+from app.core.redis import get_redis_client
+from app.core.idempotency import IdempotencyKey
 from app.core.security import verify_access_token
 from app.core.uow import UnitOfWork
 from app.db import async_session
@@ -145,3 +148,23 @@ async def get_open_conversation_for_user(
     """Получить доступный (не закрытый) диалог для пользователя."""
     ensure_conversation_is_open(conversation)
     return conversation
+
+
+def get_idempotency_key(
+    request: Request,
+    redis_client: Redis = Depends(get_redis_client),
+) -> bytes | None:
+    """Create an idempotency key service with the shared Redis client."""
+    key = request.headers.get("Idempotency-Key")
+    if key is None:
+        return None
+
+    idempotency_service = IdempotencyKey(redis_client)
+    if idempotency_service.exists(key):
+        cached_response = idempotency_service.get(key)
+        if cached_response:
+            return cached_response
+        
+    return None
+
+
