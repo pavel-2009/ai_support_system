@@ -1,5 +1,5 @@
 import pytest
-from fastapi import HTTPException, Request, Response
+from fastapi import HTTPException, Request
 
 from app.core.dependencies import get_idempotency_key
 from app.core.idempotency import IdempotencyKey
@@ -28,9 +28,6 @@ class FakeRedis:
         self.values.pop(key, None)
         self.expirations.pop(key, None)
 
-    def exists(self, key):
-        return int(key in self.values)
-
 
 def make_request(idempotency_key=None):
     headers = []
@@ -46,24 +43,24 @@ class TestIdempotencyKey:
 
         assert service.reserve("message-key", "request-fingerprint", ttl=30)
         assert not service.reserve("message-key", "request-fingerprint", ttl=30)
-        assert service.get_state("message-key") == {
+        assert service.get("message-key") == {
             "fingerprint": "request-fingerprint",
             "status": "processing",
         }
         assert redis_client.expirations["message-key"] == 30
 
-    def test_store_response_round_trips_json_and_supports_bytes_from_redis(self):
+    def test_complete_round_trips_json_and_supports_bytes_from_redis(self):
         redis_client = FakeRedis()
         service = IdempotencyKey(redis_client)
 
-        service.store_response(
+        service.complete(
             "message-key",
             "request-fingerprint",
             {"id": 42, "content": "hello"},
         )
         redis_client.values["message-key"] = redis_client.values["message-key"].encode()
 
-        assert service.get_state("message-key") == {
+        assert service.get("message-key") == {
             "fingerprint": "request-fingerprint",
             "status": "completed",
             "response": {"id": 42, "content": "hello"},
@@ -77,19 +74,8 @@ class TestIdempotencyKey:
 
         service.delete("message-key")
 
-        assert service.get_state("message-key") is None
+        assert service.get("message-key") is None
         assert service.reserve("message-key", "retry-fingerprint")
-
-    def test_legacy_response_methods_still_work(self):
-        redis_client = FakeRedis()
-        service = IdempotencyKey(redis_client)
-        response = Response(content="cached")
-
-        service.store("legacy-key", response, ttl=60)
-
-        assert service.exists("legacy-key")
-        assert service.get("legacy-key") == response.body
-        assert redis_client.expirations["legacy-key"] == 60
 
 
 class TestGetIdempotencyKey:
