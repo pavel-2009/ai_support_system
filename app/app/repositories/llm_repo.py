@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
+from ..core.circut_breaker import CircuitOpen, circuit, Circuit
 from ..core.exceptions import LLMResponseFailed
 from ..core.logging import get_logger
 from ..models.message import Message
@@ -15,6 +16,7 @@ from ..schemas.llm import LLMResponse
 
 
 logger = get_logger(__name__)
+llm_circuit = Circuit()
 
 
 class LLMRepository:
@@ -48,14 +50,9 @@ class LLMRepository:
         )
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=settings.LLM_TOKEN_LIMIT,
-                temperature=settings.LLM_TEMPERATURE,
-                timeout=settings.LLM_TIMEOUT,
-                response_format={"type": "json_object"},
-            )
+            response = await self._request_completion(messages)
+        except CircuitOpen:
+            raise
         except Exception as exc:
             raise LLMResponseFailed(f"LLM request failed: {exc}") from exc
 
@@ -83,6 +80,17 @@ class LLMRepository:
             validated.confidence,
         )
         return validated
+
+    @circuit(llm_circuit)
+    async def _request_completion(self, messages: list[dict[str, str]]):
+        return await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=settings.LLM_TOKEN_LIMIT,
+                temperature=settings.LLM_TEMPERATURE,
+                timeout=settings.LLM_TIMEOUT,
+                response_format={"type": "json_object"},
+            )
 
     @staticmethod
     def _validate_request(messages: Sequence[dict]) -> None:
