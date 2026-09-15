@@ -1,14 +1,9 @@
 """Сервис для взаимодействия с LLM моделями."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from tenacity import (
-    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
-    retry_if_not_exception_type, before_sleep_log, RetryCallState
-)
 
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
-from app.core.circut_breaker import Circuit, CircuitOpen
 
 
 class LLMService:

@@ -6,13 +6,17 @@ from collections.abc import Sequence
 from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import (
+    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+    retry_if_not_exception_type, before_sleep_log, RetryCallState
+)
 
-from ..core.config import settings
-from ..core.circut_breaker import CircuitOpen, circuit, Circuit
-from ..core.exceptions import LLMResponseFailed
-from ..core.logging import get_logger
-from ..models.message import Message
-from ..schemas.llm import LLMResponse
+from app.core.config import settings
+from app.core.circut_breaker import CircuitOpen, circuit, Circuit
+from app.core.exceptions import LLMResponseFailed
+from app.core.logging import get_logger
+from app.models.message import Message
+from app.schemas.llm import LLMResponse
 
 
 logger = get_logger(__name__)
@@ -82,6 +86,12 @@ class LLMRepository:
         return validated
 
     @circuit(llm_circuit)
+    @retry(
+        stop=stop_after_attempt(settings.LLM_RETRY_ATTEMPTS),
+        wait=wait_exponential(multiplier=settings.LLM_RETRY_WAIT_MULTIPLIER, max=settings.LLM_RETRY_WAIT_MAX),
+        retry=retry_if_exception_type(LLMResponseFailed) | retry_if_not_exception_type,
+        reraise=True,
+    )
     async def _request_completion(self, messages: list[dict[str, str]]):
         return await self.client.chat.completions.create(
                 model=self.model,
