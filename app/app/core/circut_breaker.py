@@ -35,7 +35,7 @@ class Circuit:
         """Check if calls are allowed based on the current state of the circuit."""
         with self._lock:
             if self.state == State.OPEN:
-                if time.time() - self._opened_at >= self.recovery_timeout:
+                if time.monotonic() - self._opened_at >= self.recovery_timeout:
                     self.state = State.HALF_OPEN
                     self._successes = 0
                     return True
@@ -71,22 +71,26 @@ class Circuit:
         self._failures = 0
 
 
-# Decorator for using the circuit breaker with external service calls
-def circuit(circ: Circuit, counts_as_failure=(Exception,)):
-    """Decorator to apply circuit breaker logic to a function."""
+def circuit(
+    circ: Circuit,
+    counts_as_failure=(Exception,),
+):
+    """Apply circuit breaker logic to an async external-service call."""
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):
             if not circ.allow():
                 raise CircuitOpen("Circuit is open. Calls are not allowed.")
 
             try:
-                result = func(*args, **kwargs)
-            except counts_as_failure as e:
+                result = await func(*args, **kwargs)
+            except counts_as_failure:
                 circ.on_failure()
-                raise e
+                raise
             else:
                 circ.on_success()
                 return result
+
         return wrapper
+
     return decorator
