@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.circut_breaker import Circuit, State, circuit
 from app.core.config import settings
 from app.core.exceptions import LLMResponseFailed
 from app.repositories.llm_repo import LLMRepository
@@ -44,6 +45,52 @@ class TestLLMService:
         actual = await service.generate_response(conversation_id=42, session=MagicMock())
 
         assert actual == expected
+
+
+class TestCircuitBreaker:
+    def test_circuit_starts_closed_and_allows_calls(self):
+        circ = Circuit(failure_threshold=2, recovery_timeout=1, success_threshold=2)
+
+        assert circ.state == State.CLOSED
+        assert circ.allow() is True
+
+    def test_circuit_trips_after_threshold_failures(self):
+        circ = Circuit(failure_threshold=2, recovery_timeout=5, success_threshold=2)
+
+        circ.on_failure()
+        assert circ.state == State.CLOSED
+
+        circ.on_failure()
+        assert circ.state == State.OPEN
+        assert circ.allow() is False
+
+    def test_circuit_reopens_after_recovery_timeout(self):
+        circ = Circuit(failure_threshold=1, recovery_timeout=0.01, success_threshold=1)
+        circ.on_failure()
+        circ._opened_at = 0.0
+
+        with patch("app.core.circut_breaker.time.monotonic", return_value=0.02):
+            assert circ.allow() is True
+            assert circ.state == State.HALF_OPEN
+
+    @pytest.mark.asyncio
+    async def test_circuit_decorator_marks_success_and_failure(self):
+        circ = Circuit(failure_threshold=1, recovery_timeout=1, success_threshold=1)
+
+        async def ok():
+            return "done"
+
+        result = await circuit(circ)(ok)()
+        assert result == "done"
+        assert circ.state == State.CLOSED
+
+        async def boom():
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await circuit(circ)(boom)()
+
+        assert circ.state == State.OPEN
 
 
 class TestLLMRepositoryHelpers:

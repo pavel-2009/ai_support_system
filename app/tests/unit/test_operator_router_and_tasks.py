@@ -215,8 +215,8 @@ class TestLLMTasks:
         assert kwargs["needs_review"] is True
         conversation_service.escalate.assert_not_awaited()
 
-    def test_process_llm_task_retries_on_exception(self):
-        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=ValueError("boom")):
+    def test_process_llm_task_retries_on_transient_exception(self):
+        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=ConnectionError("network")):
             from app.celery.tasks.llm_tasks import process_llm_task
             with patch.object(process_llm_task, "retry", side_effect=RuntimeError("retry called")) as retry_mock:
                 with pytest.raises(RuntimeError, match="retry called"):

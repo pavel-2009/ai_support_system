@@ -89,7 +89,7 @@ class LLMRepository:
     @retry(
         stop=stop_after_attempt(settings.LLM_RETRY_ATTEMPTS),
         wait=wait_exponential(multiplier=settings.LLM_RETRY_WAIT_MULTIPLIER, max=settings.LLM_RETRY_WAIT_MAX),
-        retry=retry_if_exception_type(LLMResponseFailed) | retry_if_not_exception_type,
+        retry=retry_if_exception_type(LLMResponseFailed),
         reraise=True,
     )
     async def _request_completion(self, messages: list[dict[str, str]]):
