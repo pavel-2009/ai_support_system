@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
+from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
 from app.db import create_database_engine
@@ -17,17 +18,25 @@ from app.services.message_service import MessageService
 
 
 logger = get_logger(__name__)
+RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
 
 
 @celery_app.task(bind=True)
 def process_llm_task(task, conversation_id: int) -> str:
-    """Обработать LLM-запрос с повтором при любой ошибке."""
+    """Обработать LLM-запрос с повтором только при временных ошибках."""
     logger.info("CELERY LLM START: conversation_id=%s", conversation_id)
     try:
         asyncio.run(_process_llm_task_async(conversation_id))
-    except Exception as exc:
-        logger.exception("CELERY LLM FAILED: conversation_id=%s", conversation_id)
+    except RETRYABLE_TASK_ERRORS as exc:
+        logger.warning(
+            "CELERY LLM RETRY: conversation_id=%s error=%s",
+            conversation_id,
+            type(exc).__name__,
+        )
         raise task.retry(exc=exc)
+    except Exception:
+        logger.exception("CELERY LLM FAILED: conversation_id=%s", conversation_id)
+        raise
 
     logger.info("CELERY LLM SUCCESS: conversation_id=%s", conversation_id)
     return "ok"

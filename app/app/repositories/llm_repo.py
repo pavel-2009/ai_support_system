@@ -3,12 +3,11 @@
 import json
 from collections.abc import Sequence
 
-from openai import AsyncOpenAI
+from openai import APIError, AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
-    retry_if_not_exception_type, before_sleep_log, RetryCallState
 )
 
 from app.core.config import settings
@@ -54,28 +53,11 @@ class LLMRepository:
         )
 
         try:
-            response = await self._request_completion(messages)
+            validated = await self._request_and_validate(messages)
         except CircuitOpen:
             raise
-        except Exception as exc:
+        except (APIError, LLMResponseFailed) as exc:
             raise LLMResponseFailed(f"LLM request failed: {exc}") from exc
-
-        content = self._extract_response_content(response)
-        logger.debug("LLM RAW RESPONSE: %r", content)
-
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise LLMResponseFailed(
-                "LLM returned invalid JSON"
-            ) from exc
-
-        try:
-            validated = LLMResponse.model_validate(payload)
-        except Exception as exc:
-            raise LLMResponseFailed(
-                f"LLM response validation failed: {exc}"
-            ) from exc
 
         logger.info(
             "LLM RESPONSE VALIDATED: conversation_id=%s topic=%s confidence=%s",
@@ -85,13 +67,33 @@ class LLMRepository:
         )
         return validated
 
-    @circuit(llm_circuit)
+    @circuit(llm_circuit, counts_as_failure=(APIError, LLMResponseFailed))
     @retry(
         stop=stop_after_attempt(settings.LLM_RETRY_ATTEMPTS),
         wait=wait_exponential(multiplier=settings.LLM_RETRY_WAIT_MULTIPLIER, max=settings.LLM_RETRY_WAIT_MAX),
-        retry=retry_if_exception_type(LLMResponseFailed),
+        retry=retry_if_exception_type(APIError),
         reraise=True,
     )
+    async def _request_and_validate(
+        self,
+        messages: list[dict[str, str]],
+    ) -> LLMResponse:
+        response = await self._request_completion(messages)
+        content = self._extract_response_content(response)
+        logger.debug("LLM RAW RESPONSE: %r", content)
+
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise LLMResponseFailed("LLM returned invalid JSON") from exc
+
+        try:
+            return LLMResponse.model_validate(payload)
+        except Exception as exc:
+            raise LLMResponseFailed(
+                f"LLM response validation failed: {exc}"
+            ) from exc
+
     async def _request_completion(self, messages: list[dict[str, str]]):
         return await self.client.chat.completions.create(
                 model=self.model,

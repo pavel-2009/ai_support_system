@@ -229,3 +229,12 @@ class TestLLMTasks:
             result = process_llm_task.run(5)
         assert result == "ok"
         run_mock.assert_called_once()
+
+    def test_process_llm_task_does_not_retry_non_transient_exception(self):
+        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=ValueError("invalid response")):
+            from app.celery.tasks.llm_tasks import process_llm_task
+            with patch.object(process_llm_task, "retry") as retry_mock:
+                with pytest.raises(ValueError, match="invalid response"):
+                    process_llm_task.run(6)
+
+        retry_mock.assert_not_called()
