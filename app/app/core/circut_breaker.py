@@ -69,3 +69,24 @@ class Circuit:
         self.state = State.OPEN
         self._opened_at = time.monotonic()
         self._failures = 0
+
+
+# Decorator for using the circuit breaker with external service calls
+def circuit(circ: Circuit, counts_as_failure=(Exception,)):
+    """Decorator to apply circuit breaker logic to a function."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if not circ.allow():
+                raise CircuitOpen("Circuit is open. Calls are not allowed.")
+
+            try:
+                result = func(*args, **kwargs)
+            except counts_as_failure as e:
+                circ.on_failure()
+                raise e
+            else:
+                circ.on_success()
+                return result
+        return wrapper
+    return decorator
