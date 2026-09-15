@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     LLM_AI_CONFIDENCE_THRESHOLD: float = 0.8
     LLM_ESCALATION_CONFIDENCE_THRESHOLD: float = 0.65
     LLM_TOKEN_LIMIT: int = 1024
+    LLM_RETRY_ATTEMPTS: int = 5
+    LLM_RETRY_WAIT_MULTIPLIER: float = 1.5
+    LLM_RETRY_WAIT_MAX: int = 4
 
     # === Redis ===
     REDIS_URL: str = "redis://redis:6379/0"
