@@ -16,8 +16,15 @@ Base = declarative_base()
 
 
 def create_database_engine(database_url: str) -> AsyncEngine:
-    """Создать async engine с диагностикой SQL-запросов."""
-    database_engine = create_async_engine(database_url, pool_pre_ping=True)
+    """Создать async engine с диагностикой SQL-запросов и connection pooling."""
+    database_engine = create_async_engine(
+        database_url,
+        pool_size=20,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=3600,
+        pool_pre_ping=True,
+    )
 
     @event.listens_for(database_engine.sync_engine, "before_cursor_execute")
     def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
