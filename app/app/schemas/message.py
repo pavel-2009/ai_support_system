@@ -2,13 +2,34 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+import bleach
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MessageCreate(BaseModel):
     """Схема для создания сообщений."""
 
-    content: str = Field(..., min_length=1, description="Содержимое сообщения")
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=10_000,
+        description="Содержимое сообщения",
+    )
+
+    @field_validator("content")
+    @classmethod
+    def sanitize_content(cls, value: str) -> str:
+        """Удалить HTML-теги и потенциально опасную разметку из сообщения."""
+        sanitized = bleach.clean(
+            value,
+            tags=[],
+            attributes={},
+            protocols=[],
+            strip=True,
+        )
+        if not sanitized.strip():
+            raise ValueError("Содержимое сообщения не может быть пустым")
+        return sanitized
 
 
 class MessageGet(BaseModel):
