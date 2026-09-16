@@ -49,7 +49,10 @@ class TestUserValidation:
                 password=password,
             )
 
-    @pytest.mark.parametrize("nickname", ["ab", "bad-name", "русский", "user name", "a" * 33])
+    @pytest.mark.parametrize(
+        "nickname",
+        ["ab", "bad.name", "русский", "user name", "a" * 33],
+    )
     def test_invalid_username_is_rejected(self, nickname: str):
         with pytest.raises(ValidationError):
             UserCreate(
@@ -58,9 +61,17 @@ class TestUserValidation:
                 password="StrongPass1!",
             )
 
+    def test_hyphenated_username_is_accepted(self):
+        user = UserCreate(
+            email="user@example.com",
+            nickname="operator-8407d1c1",
+            password="StrongPass1!",
+        )
+        assert user.nickname == "operator-8407d1c1"
+
     def test_invalid_username_is_rejected_on_update(self):
         with pytest.raises(ValidationError):
-            UserUpdate(nickname="bad-name")
+            UserUpdate(nickname="bad.name")
 
 
 class TestConversationValidation:
