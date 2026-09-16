@@ -1,27 +1,43 @@
 """Pydantic схемы для работы с пользователями."""
 
+import re
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
+
+
+def validate_username(value: str) -> str:
+    """Проверить username/nickname по безопасному формату."""
+    value = value.strip()
+    if not USERNAME_PATTERN.fullmatch(value):
+        raise ValueError(
+            "Username должен содержать 3-32 символа: латинские буквы, цифры или _"
+        )
+    return value
 
 
 class UserBase(BaseModel):
     """Базовая модель пользователя."""
 
     email: EmailStr
-    nickname: str
+    nickname: str = Field(..., min_length=3, max_length=32)
     full_name: str | None = Field(default=None, alias="fullname")
 
     model_config = ConfigDict(populate_by_name=True)
+
+    _validate_nickname = field_validator("nickname")(validate_username)
 
 
 class UserCreate(UserBase):
     """Модель для создания пользователя."""
 
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("password")
+    @classmethod
     def validate_password(cls, value: str) -> str:
-        if len(value) < 8:
-            raise ValueError("Пароль должен быть не менее 8 символов")
         if not any(char.isdigit() for char in value):
             raise ValueError("Пароль должен содержать хотя бы одну цифру")
         if not any(char.isalpha() for char in value):
@@ -42,10 +58,12 @@ class UserGet(UserBase):
 class UserUpdate(BaseModel):
     """Модель для обновления информации о пользователе."""
 
-    nickname: str | None = None
+    nickname: str | None = Field(default=None, min_length=3, max_length=32)
     full_name: str | None = Field(default=None, alias="fullname")
 
     model_config = ConfigDict(populate_by_name=True)
+
+    _validate_nickname = field_validator("nickname")(validate_username)
 
 
 class UserLogin(BaseModel):
