@@ -5,7 +5,7 @@ import re
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,32}$")
 
 
 def validate_username(value: str) -> str:
@@ -13,7 +13,7 @@ def validate_username(value: str) -> str:
     value = value.strip()
     if not USERNAME_PATTERN.fullmatch(value):
         raise ValueError(
-            "Username должен содержать 3-32 символа: латинские буквы, цифры или _"
+            "Username должен содержать 3-32 символа: латинские буквы, цифры, _ или -"
         )
     return value
 
@@ -38,10 +38,12 @@ class UserCreate(UserBase):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
+        if not any(char.islower() for char in value):
+            raise ValueError("Пароль должен содержать хотя бы одну строчную букву")
+        if not any(char.isupper() for char in value):
+            raise ValueError("Пароль должен содержать хотя бы одну заглавную букву")
         if not any(char.isdigit() for char in value):
             raise ValueError("Пароль должен содержать хотя бы одну цифру")
-        if not any(char.isalpha() for char in value):
-            raise ValueError("Пароль должен содержать хотя бы одну букву")
         if not any(char in "!@#$%^&*()-_=+[]{}|;:'\",.<>?/" for char in value):
             raise ValueError("Пароль должен содержать хотя бы один специальный символ")
         return value
