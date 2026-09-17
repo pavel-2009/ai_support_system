@@ -78,7 +78,7 @@ class TestUserServiceExtended:
         from app.services.user_service import UserService
 
         uow = SimpleNamespace(users=AsyncMock())
-        service = UserService(uow)
+        service = UserService(uow, MagicMock())
         data = UserLogin(email="missing@example.com", password="Pass123!")
 
         with patch.object(uow.users, "get_by_email", AsyncMock(return_value=None)):

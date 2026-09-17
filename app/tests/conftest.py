@@ -4,6 +4,9 @@
 """
 import pytest
 import asyncio
+import json
+import secrets
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -14,12 +17,93 @@ from app.db import Base, get_async_session
 from app.core.dependencies import get_uow
 from app.core.uow import UnitOfWork
 from app.core.rate_limit import limiter
+from app.core.redis import get_redis_client
 from app.models.user import User, UserRole
 from app.core.security import hash_password
+from app.core.config import settings
+from app.services.token_service import TokenService, _hash_token
 
 
 # === ТЕСТОВАЯ БД ===
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+class MockRedis:
+    def __init__(self):
+        self.values = {}
+        self.sets = {}
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def setex(self, key, _ttl, value):
+        self.values[key] = value
+        return True
+
+    def delete(self, key):
+        deleted = int(key in self.values) + int(key in self.sets)
+        self.values.pop(key, None)
+        self.sets.pop(key, None)
+        return deleted
+
+    def sadd(self, key, *values):
+        target = self.sets.setdefault(key, set())
+        before = len(target)
+        target.update(values)
+        return len(target) - before
+
+    def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    def srem(self, key, *values):
+        target = self.sets.get(key, set())
+        removed = sum(value in target for value in values)
+        target.difference_update(values)
+        return removed
+
+    def scard(self, key):
+        return len(self.sets.get(key, set()))
+
+    def expire(self, _key, _ttl):
+        return True
+
+    def pipeline(self):
+        return self
+
+    def execute(self):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def mock_redis(monkeypatch):
+    redis = MockRedis()
+
+    app.dependency_overrides[get_redis_client] = lambda: redis
+
+    def issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
+        refresh_token = secrets.token_urlsafe(32)
+        token_hash = _hash_token(refresh_token)
+        ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
+        payload = json.dumps({
+            "user_id": user_id,
+            "jti": jti,
+            "family_id": family_id,
+            "expires_at": expires_at,
+        })
+
+        pipe = self.redis.pipeline()
+        pipe.setex(self._key(token_hash), ttl, payload)
+        pipe.sadd(self._family_key(family_id), token_hash)
+        pipe.expire(self._family_key(family_id), ttl)
+        pipe.sadd(self._user_families_key(user_id), family_id)
+        pipe.expire(self._user_families_key(user_id), ttl)
+        pipe.execute()
+        return refresh_token
+
+    monkeypatch.setattr(TokenService, "_issue_refresh", issue_refresh)
+    yield redis
+    app.dependency_overrides.pop(get_redis_client, None)
 
 
 @pytest.fixture(scope="session")
@@ -72,7 +156,7 @@ def client(async_session):
 
 def _create_authenticated_client(async_session, user_email: str, user_role: UserRole = UserRole.USER):
     """Helper для создания независимого авторизованного клиента."""
-    from app.core.security import create_tokens
+    from app.core.security import create_access_token
     
     def override_get_async_session():
         yield async_session
@@ -112,8 +196,8 @@ def _create_authenticated_client(async_session, user_email: str, user_role: User
     loop.close()
     
     # Создаём токены
-    tokens = create_tokens({"user_id": user.id, "email": user.email, "role": user.role.value})
-    test_client.headers["Authorization"] = f"Bearer {tokens.access_token}"
+    access_token = create_access_token({"user_id": user.id, "email": user.email, "role": user.role.value})
+    test_client.headers["Authorization"] = f"Bearer {access_token}"
     
     return test_client
 
