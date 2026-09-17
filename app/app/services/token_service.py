@@ -24,4 +24,10 @@ class RefreshTokenReused(RefreshTokenError): ...
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+@dataclass
+class RefreshTokenData:
+    user_id: int
+    jti: str
+    family_id: str
  
