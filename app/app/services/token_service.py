@@ -164,19 +164,60 @@ class TokenService:
 
     def _issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
         """Создание нового refresh-токена и сохранение его в Redis."""
-        ...
+        token = secrets.token_urlsafe(token)
+        token_hash = _hash_token(token)
+        ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
+
+        payload = json.dumps(
+            {
+                "user_id": user_id,
+                "jti": jti,
+                "family_id": family_id,
+                "expires_at": expires_at,
+            }
+        )
+
+        pipe = self.redis.pipeline()
+
+        pipe.setex(self._key(token_hash), ttl, payload)
+        pipe.sadd(self._family_key(family_id), token_hash)
+        pipe.expire(self._family_key(family_id), ttl)
+        pipe.sadd(self._user_families_key(user_id), family_id)
+        pipe.expire(self._user_families_key(user_id), ttl)
+
+        pipe.execute()
+        return token
 
     def _delete_token(self, token_hash: str, family_id: str, user_id: int) -> None:
-        """Удаление токена из Redis и пометка его как использованного."""
-        ...
+        """Удаление токена из Redis"""
+        pipe = self.redis.pipeline()
+        pipe.setex(f"used_refresh:{token_hash}", 300, family_id)
+        pipe.delete(self._key(token_hash))
+        pipe.srem(self._family_key(family_id), token_hash)
+        pipe.execute()
+
+        if self.redis.scard(self._family_key(family_id)) == 0:
+            pipe = self.redis.pipeline()
+            pipe.delete(self._family_key(family_id))
+            pipe.srem(self._user_families_key(user_id), family_id)
+            pipe.execute()
 
     def _get_family_user_id(self, family_id: str) -> int | None:
         """Получение user_id по family_id из Redis."""
-        ...
+        token_hashes = self.redis.smembers(self._family_key(family_id)) or set()
+        for token_hash in token_hashes:
+            raw = self.redis.get(self._key(token_hash))
+            if raw:
+                return int(json.loads(raw)["user_id"])
+        return None
 
     def _lookup_tombstone(self, token_hash: str) -> str | None:
         """Проверка, был ли токен уже использован (т.е. есть ли "могильная плита" для него в Redis)."""
-        ...
+        value = self.redis.get(f"used_refresh:{token_hash}")
+        if value is None:
+            return None
+        return value if isinstance(value, str) else value.decode("utf-8")
 
     @staticmethod
     def _key(token_hash: str) -> str:
