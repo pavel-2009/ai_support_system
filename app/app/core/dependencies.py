@@ -3,6 +3,7 @@
 from fastapi import Depends, HTTPException, Path, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from collections.abc import AsyncIterator
+from redis import Redis
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis_client
@@ -15,6 +16,7 @@ from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
 from app.services.user_service import UserService
 from app.services.llm_service import LLMService
+from app.services.token_service import TokenService
 from app.repositories.llm_repo import LLMRepository
 
 logger = get_logger(__name__)
@@ -24,6 +26,10 @@ oauth2_scheme = OAuth2PasswordBearer(
     description="JWT токен доступа"
 )
 
+
+def get_token_service(redis: Redis = Depends(get_redis_client)) -> TokenService:
+    """Return token service"""
+    return TokenService(redis)
 
 async def get_uow() -> AsyncIterator[UnitOfWork]:
     """Открыть одну транзакцию на время обработки HTTP-запроса."""
@@ -71,9 +77,10 @@ async def require_authenticated_user(
 
 async def get_user_service(
     uow: UnitOfWork = Depends(get_uow),
+    token_service: TokenService = Depends(get_token_service)
 ) -> UserService:
     """Зависимость для получения сервиса работы с пользователями."""
-    return UserService(uow)
+    return UserService(uow, token_service)
 
 
 async def get_conversation_service(
@@ -167,5 +174,3 @@ def get_idempotency_key(
             detail="Idempotency-Key слишком длинный.",
         )
     return key
-
-
