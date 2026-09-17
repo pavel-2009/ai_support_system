@@ -68,4 +68,16 @@ class TokenService:
 
     def _lookup_tombstone(self, token_hash: str) -> str | None:
         ...
+
+    @staticmethod
+    def _key(token_hash: str) -> str:
+        return f"{settings.REFRESH_TOKEN_PREFIX}{token_hash}"
+
+    @staticmethod
+    def _family_key(family_id: str) -> str:
+        return f"{settings.REFRESH_FAMILY_PREFIX}{family_id}"
+
+    @staticmethod
+    def _user_families_key(user_id: int) -> str:
+        return f"{settings.USER_FAMILIES_PREFIX}{user_id}"
  
