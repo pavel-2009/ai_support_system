@@ -2,6 +2,7 @@
 
 from app.core.security import create_tokens, hash_password, verify_password
 from app.core.uow import UnitOfWork
+from app.services.token_service import TokenService
 from app.domain.events import UserDeleted, UserRegistered, UserUpdated
 from app.models.user import User, UserRole
 from app.schemas.token import Token
@@ -11,8 +12,9 @@ from app.schemas.user import UserCreate, UserLogin, UserUpdate
 class UserService:
     """Бизнес-логика пользователей."""
 
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, token_service: TokenService):
         self.uow = uow
+        self.token_service = token_service
 
     def _add_event(self, event) -> None:
         """Queue an event when the UoW supports domain events.
