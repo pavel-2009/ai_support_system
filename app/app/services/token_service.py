@@ -104,7 +104,20 @@ class TokenService:
 
     def revoke_family(self, family_id: str, user_id: int | None = None) -> None:
         """Отзыв всех токенов в семье. Удаляет все токены с данным family_id из Redis."""
-        ...
+        family_key = self._family_key(family_id)
+        token_hashes = self.redis.smembers(family_key) or set()
+
+        pipe = self.redis.pipeline()
+        for token_hash in token_hashes:
+            pipe.setex(f"used_refresh:{token_hash}", 300, family_id)
+            pipe.delete(self._key(token_hash))
+
+        pipe.delete(family_key)
+
+        if user_id is not None:
+            pipe.srem(self._user_families_key(user_id), family_id)
+
+        pipe.execute()
 
     def revoke_all_for_user(self, user_id: int) -> int:
         """Отзыв всех токенов для пользователя. Удаляет все токены пользователя из Redis."""
