@@ -40,33 +40,50 @@ class TokenService:
 
 
     def issue_pair(self, user_data: dict) -> tuple[str, str]:
-        ...
+        """Создание пары токенов (access и refresh) для пользователя."""
+        user_id = int(user_data.get('user_id', 0))
+        jti = str(uuid4())
+        family_id = str(uuid4())
+
+        refresh_token = self._issue_refresh(user_id, jti, family_id)
+        access_token = create_access_token(user_data)
+
+        return access_token, refresh_token
 
     def rotate(self, old_refresh_token: str) -> tuple[str, str]:
+        """Ротация refresh-токена. Проверяет старый токен, создает новый и помечает старый как использованный."""
         ...
 
     def revoke(self, refresh_token: str) -> None:
+        """Отзыв refresh-токена. Удаляет токен из Redis и помечает его как использованный."""
         ...
 
     def revoke_family(self, family_id: str, user_id: int | None = None) -> None:
+        """Отзыв всех токенов в семье. Удаляет все токены с данным family_id из Redis."""
         ...
 
     def revoke_all_for_user(self, user_id: int) -> int:
+        """Отзыв всех токенов для пользователя. Удаляет все токены пользователя из Redis."""
         ...
 
     def list_user_sessions(self, user_id: int) -> list[dict]:
+        """Возвращает список всех активных сессий пользователя."""
         ...
 
     def _issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
+        """Создание нового refresh-токена и сохранение его в Redis."""
         ...
 
     def _delete_token(self, token_hash: str, family_id: str, user_id: int) -> None:
+        """Удаление токена из Redis и пометка его как использованного."""
         ...
 
     def _get_family_user_id(self, family_id: str) -> int | None:
+        """Получение user_id по family_id из Redis."""
         ...
 
     def _lookup_tombstone(self, token_hash: str) -> str | None:
+        """Проверка, был ли токен уже использован (т.е. есть ли "могильная плита" для него в Redis)."""
         ...
 
     @staticmethod
