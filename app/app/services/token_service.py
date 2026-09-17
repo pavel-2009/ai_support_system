@@ -146,7 +146,21 @@ class TokenService:
 
     def list_user_sessions(self, user_id: int) -> list[dict]:
         """Возвращает список всех активных сессий пользователя."""
-        ...
+        family_ids = self.redis.smembers(self._user_families_key(user_id)) or set()
+        sessions = []
+        for family_id in family_ids:
+            token_hashes = self.redis.smembers(self._family_key(family_id)) or set()
+            for token_hash in token_hashes:
+                raw = self.redis.get(self._key(token_hash))
+                if raw:
+                    payload = json.loads(raw)
+                    sessions.append({
+                        "family_id": family_id,
+                        "jti": payload["jti"],
+                        "expires_at": payload["expires_at"],
+                    })
+                    break
+        return sessions
 
     def _issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
         """Создание нового refresh-токена и сохранение его в Redis."""
