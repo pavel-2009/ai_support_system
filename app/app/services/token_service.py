@@ -121,7 +121,28 @@ class TokenService:
 
     def revoke_all_for_user(self, user_id: int) -> int:
         """Отзыв всех токенов для пользователя. Удаляет все токены пользователя из Redis."""
-        ...
+        families_key = self._user_families_key(user_id)
+        family_ids = self.redis.smembers(families_key) or set()
+
+        if not family_ids:
+            return 0
+
+        pipe = self.redis.pipeline()
+        for family_id in family_ids:
+            family_key = self._family_key(family_id)
+            token_hashes = self.redis.smembers(family_key) or set()
+            for token_hash in token_hashes:
+                pipe.setex(f"used_refresh:{token_hash}", 300, family_id)
+                pipe.delete(self._key(token_hash))
+            pipe.delete(family_key)
+        pipe.delete(families_key)
+        pipe.execute()
+
+        logger.info(
+            "REVOKE ALL SESSIONS: user=%s families=%s",
+            user_id, len(family_ids),
+        )
+        return len(family_ids)
 
     def list_user_sessions(self, user_id: int) -> list[dict]:
         """Возвращает список всех активных сессий пользователя."""
