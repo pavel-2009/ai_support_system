@@ -52,7 +52,22 @@ class TokenService:
 
     def rotate(self, old_refresh_token: str) -> tuple[str, str]:
         """Ротация refresh-токена. Проверяет старый токен, создает новый и помечает старый как использованный."""
-        ...
+        old_hash = _hash_token(old_refresh_token)
+        raw = self.redis.get(self._key(old_hash))
+
+        if raw is None:
+            family_id = self._lookup_tombstone(old_hash)
+            if family_id:
+                user_id = self._get_family_user_id(family_id)
+                self.revoke_family(family_id, user_id)
+
+                logger.warning(
+                    "REFRESH REUSE DETECTED: family=%s user=%s revoked",
+                    family_id, user_id,
+                )
+
+                raise RefreshTokenReused("Refresh token уже был использован.")
+            raise RefreshTokenNotFound("Refresh token не найден или истёк.")
 
     def revoke(self, refresh_token: str) -> None:
         """Отзыв refresh-токена. Удаляет токен из Redis и помечает его как использованный."""
