@@ -69,6 +69,21 @@ class TokenService:
                 raise RefreshTokenReused("Refresh token уже был использован.")
             raise RefreshTokenNotFound("Refresh token не найден или истёк.")
 
+        payload = json.loads(raw)
+        user_id = int(payload.get("user_id", 0))
+        family_id = payload.get("family_id", 0)
+
+        if user_id == 0 or family_id == 0:
+            raise RefreshTokenError("Некорректные данные в refresh-токене.")
+
+        self._delete_token(old_hash, family_id, user_id)
+
+        new_jti = str(uuid4())
+        new_refresh = self._issue_refresh(user_id, new_jti, family_id)
+        access_token = create_access_token({"user_id": user_id})
+        
+        return access_token, new_refresh
+
     def revoke(self, refresh_token: str) -> None:
         """Отзыв refresh-токена. Удаляет токен из Redis и помечает его как использованный."""
         ...
