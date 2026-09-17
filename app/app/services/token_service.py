@@ -81,12 +81,26 @@ class TokenService:
         new_jti = str(uuid4())
         new_refresh = self._issue_refresh(user_id, new_jti, family_id)
         access_token = create_access_token({"user_id": user_id})
-        
+
         return access_token, new_refresh
 
     def revoke(self, refresh_token: str) -> None:
         """Отзыв refresh-токена. Удаляет токен из Redis и помечает его как использованный."""
-        ...
+        token_hash = _hash_token(refresh_token)
+
+        raw = self.redis.get(self._key(token_hash))
+        if raw is None:
+            return
+
+        payload = json.loads(raw)
+
+        user_id = int(payload.get("user_id", 0))
+        family_id = payload.get("family_id", 0)
+
+        if user_id == 0 or family_id == 0:
+            raise RefreshTokenError("Некорректные данные в refresh-токене.")
+
+        self._delete_token(token_hash, family_id, user_id)
 
     def revoke_family(self, family_id: str, user_id: int | None = None) -> None:
         """Отзыв всех токенов в семье. Удаляет все токены с данным family_id из Redis."""
