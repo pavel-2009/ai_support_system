@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { LogOut, MessageSquare, Plus } from 'lucide-react';
+import { KeyRound, LogOut, MessageSquare, Plus } from 'lucide-react';
 import { formatConversationTimestamp } from '../../utils/date';
 import StatusBadge from './StatusBadge';
 
@@ -9,7 +9,7 @@ const filters = [
   { id: 'closed', label: 'Закрытые' },
 ];
 
-export default function ChatSidebar({ activeConversationId, conversations, currentUser, loading, onCreateConversation, onLogout, onSelectConversation }) {
+export default function ChatSidebar({ activeConversationId, conversations, currentUser, loading, onCreateConversation, onLogout, onManageSessions, onSelectConversation }) {
   const [filter, setFilter] = useState('all');
   const [isCreating, setIsCreating] = useState(false);
   const filteredConversations = useMemo(() => conversations.filter((conversation) => {
@@ -59,7 +59,10 @@ export default function ChatSidebar({ activeConversationId, conversations, curre
           <div className="avatar-circle">{(currentUser?.nickname || currentUser?.email || 'U')[0].toUpperCase()}</div>
           <div className="user-meta"><span className="user-name" title={currentUser?.email}>{currentUser?.nickname || currentUser?.email}</span><span className="user-role-badge">{currentUser?.role || 'Пользователь'}</span></div>
         </div>
-        <button className="icon-button" onClick={onLogout} title="Выйти из аккаунта" type="button"><LogOut size={16} /></button>
+        <div className="user-actions">
+          <button className="icon-button" onClick={onManageSessions} title="Управление сессиями" type="button"><KeyRound size={16} /></button>
+          <button className="icon-button" onClick={onLogout} title="Выйти из аккаунта" type="button"><LogOut size={16} /></button>
+        </div>
       </footer>
     </aside>
   );

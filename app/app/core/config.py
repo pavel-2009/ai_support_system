@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # === REFRESH ===
+    REFRESH_TOKEN_BYTES: int = 64
+    REFRESH_TOKEN_PREFIX: str = "refresh:"
+    REFRESH_FAMILY_PREFIX: str = "refresh_family:"
+    USER_FAMILIES_PREFIX: str = "user_families:"
+
     # === AI ===
     LLM_BASE_URL: str = "http://localhost:11434/v1"
     LLM_API_KEY: str = "ollama"

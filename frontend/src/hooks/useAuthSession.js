@@ -28,5 +28,10 @@ export default function useAuthSession() {
     return () => window.removeEventListener('auth-expired', handleAuthExpired);
   }, []);
 
-  return { currentUser, authLoading, setCurrentUser };
+  const logout = async () => {
+    await api.logout();
+    setCurrentUser(null);
+  };
+
+  return { currentUser, authLoading, setCurrentUser, logout };
 }

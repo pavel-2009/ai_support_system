@@ -35,7 +35,9 @@ class TestUserService:
         from app.services.user_service import UserService
 
         uow = SimpleNamespace(users=AsyncMock(), add_event=MagicMock())
-        service = UserService(uow)
+        token_service = MagicMock()
+        token_service.issue_pair.return_value = ("access-token", "refresh-token")
+        service = UserService(uow, token_service)
         admin = MagicMock(role=UserRole.ADMIN)
 
         user_data = UserCreate(
@@ -58,11 +60,13 @@ class TestUserService:
 
         with patch.object(uow.users, "get_by_email", AsyncMock(return_value=created_user)), patch(
             "app.services.user_service.verify_password", return_value=True
-        ), patch("app.services.user_service.create_tokens", return_value=MagicMock()):
-            assert await service.login_user(UserLogin(email=user_data.email, password="Pass123!")) is not None
+        ):
+            tokens = await service.login_user(UserLogin(email=user_data.email, password="Pass123!"))
+            assert tokens.access_token == "access-token"
 
-        with patch("app.services.user_service.create_tokens", return_value=MagicMock()):
-            assert await service.refresh_token(created_user) is not None
+        token_service.rotate.return_value = ("new-access-token", "new-refresh-token")
+        tokens = await service.refresh_token("refresh-token")
+        assert tokens.access_token == "new-access-token"
 
         with patch.object(service, "get_user_by_id", AsyncMock(return_value=created_user)), patch.object(
             uow.users, "delete", AsyncMock(return_value=None)
