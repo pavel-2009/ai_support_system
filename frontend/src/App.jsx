@@ -8,9 +8,10 @@ import EmptyConversation from './features/chat/EmptyConversation';
 import useAuthSession from './hooks/useAuthSession';
 import useBackendHealth from './hooks/useBackendHealth';
 import useConversations from './hooks/useConversations';
+import SessionsDialog from './features/auth/SessionsDialog';
 
 export default function App() {
-  const { currentUser, authLoading, setCurrentUser } = useAuthSession();
+  const { currentUser, authLoading, setCurrentUser, logout } = useAuthSession();
   const backendOnline = useBackendHealth();
   const {
     activeConversationId,
@@ -25,6 +26,7 @@ export default function App() {
   } = useConversations(currentUser);
   const [isSending, setIsSending] = useState(false);
   const [isWaitingAi, setIsWaitingAi] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   useEffect(() => {
     if (!activeConversationId) setIsWaitingAi(false);
@@ -87,10 +89,15 @@ export default function App() {
     }
   }, [refreshMessages, updateConversation]);
 
-  const handleLogout = useCallback(() => {
-    clearStoredTokens();
-    setCurrentUser(null);
-  }, [setCurrentUser]);
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+    } catch (error) {
+      clearStoredTokens();
+      setCurrentUser(null);
+      console.error('Logout error:', error);
+    }
+  }, [logout, setCurrentUser]);
 
   return (
     <AppWindow backendOnline={backendOnline} currentUser={currentUser}>
@@ -107,6 +114,7 @@ export default function App() {
             loading={sidebarLoading}
             onCreateConversation={handleCreateConversation}
             onLogout={handleLogout}
+            onManageSessions={() => setSessionsOpen(true)}
             onSelectConversation={selectConversation}
           />
           {activeConversation ? (
@@ -119,6 +127,7 @@ export default function App() {
               onSendMessage={handleSendMessage}
             />
           ) : <EmptyConversation />}
+          {sessionsOpen && <SessionsDialog onClose={() => setSessionsOpen(false)} onLoggedOut={setCurrentUser} />}
         </>
       )}
     </AppWindow>

@@ -40,6 +40,7 @@ async def get_uow() -> AsyncIterator[UnitOfWork]:
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     uow: UnitOfWork = Depends(get_uow),
+    token_service: TokenService = Depends(get_token_service),
 ) -> User:
     """Получить текущего пользователя по access JWT."""
     payload = verify_access_token(token)
@@ -59,7 +60,7 @@ async def get_current_user(
         )
 
     try:
-        return await UserService(uow).get_user_by_id(int(user_id))
+        return await UserService(uow, token_service).get_user_by_id(int(user_id))
     except ValueError as exc:
         logger.exception("Ошибка авторизации: пользователь из токена не найден.")
         raise HTTPException(

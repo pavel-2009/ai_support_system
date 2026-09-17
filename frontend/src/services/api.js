@@ -97,6 +97,26 @@ export const api = {
     return data;
   },
 
+  async logout() {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      await request('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }, false);
+    }
+    clearStoredTokens();
+  },
+
+  async getSessions() {
+    return await request('/auth/sessions');
+  },
+
+  async logoutAllSessions() {
+    await request('/auth/sessions', { method: 'DELETE' }, false);
+    clearStoredTokens();
+  },
+
   async register({ email, password, nickname, fullname }) {
     return await request('/auth/register', {
       method: 'POST',

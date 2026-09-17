@@ -1,13 +1,11 @@
 """Пользовательские роутеры пользователей и аутентификации."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel
 from app.core.dependencies import get_user_service, require_authenticated_user
 from app.core.logging import get_logger
-from app.core.security import create_tokens, verify_refresh_token
 from app.core.rate_limit import limiter, get_user_identifier
 from app.models.user import User
-from app.schemas.token import Token
+from app.schemas.token import RefreshTokenRequest, SessionInfo, Token
 from app.schemas.user import UserCreate, UserGet, UserLogin, UserUpdate
 from app.services.user_service import UserService
 
@@ -15,10 +13,6 @@ users_router = APIRouter(prefix="/users", tags=["users"])
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 logger = get_logger(__name__)
-
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
 
 
 def _http_error(code: int, exc: ValueError) -> HTTPException:
@@ -162,13 +156,40 @@ async def login_user(
 @auth_router.post("/refresh", response_model=Token, summary="Обновить токен")
 async def refresh_token(
     data: RefreshTokenRequest,
+    user_service: UserService = Depends(get_user_service),
 ) -> Token:
     """Обновить access токен с помощью refresh токена."""
-    payload = verify_refresh_token(data.refresh_token)
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный refresh токен.")
-    user_data = {k: v for k, v in payload.items() if k not in {"exp", "iat", "nbf", "jti"}}
-    return create_tokens(user_data)
+    try:
+        return await user_service.refresh_token(data.refresh_token)
+    except ValueError as exc:
+        raise _http_error(status.HTTP_401_UNAUTHORIZED, exc) from exc
+
+
+@auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Завершить текущую сессию")
+async def logout_user(
+    data: RefreshTokenRequest,
+    user_service: UserService = Depends(get_user_service),
+) -> None:
+    """Отозвать refresh-токен текущей сессии."""
+    await user_service.logout_user(data.refresh_token)
+
+
+@auth_router.get("/sessions", response_model=list[SessionInfo], summary="Активные сессии")
+async def get_sessions(
+    current_user: User = Depends(require_authenticated_user),
+    user_service: UserService = Depends(get_user_service),
+) -> list[SessionInfo]:
+    """Получить все активные сессии текущего пользователя."""
+    return await user_service.get_sessions(current_user.id)
+
+
+@auth_router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT, summary="Завершить все сессии")
+async def logout_all_sessions(
+    current_user: User = Depends(require_authenticated_user),
+    user_service: UserService = Depends(get_user_service),
+) -> None:
+    """Отозвать все refresh-токены текущего пользователя."""
+    await user_service.revoke_all_sessions(current_user.id)
 
 
 @admin_router.get("/users", response_model=list[UserGet], summary="Админ: список пользователей")

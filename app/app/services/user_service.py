@@ -13,7 +13,7 @@ from app.schemas.user import UserCreate, UserLogin, UserUpdate
 class UserService:
     """Бизнес-логика пользователей."""
 
-    def __init__(self, uow: UnitOfWork, token_service: TokenService):
+    def __init__(self, uow: UnitOfWork, token_service: TokenService | None = None):
         self.uow = uow
         self.token_service = token_service
 
@@ -85,6 +85,8 @@ class UserService:
         self._add_event(UserDeleted(str(user.id)))
 
     async def login_user(self, data: UserLogin) -> Token:
+        if self.token_service is None:
+            raise RuntimeError("TokenService не настроен для UserService.")
         user = await self.uow.users.get_by_email(data.email)
         if not user or not verify_password(data.password, user.hashed_password):
             raise ValueError("Неверные учетные данные.")
@@ -93,9 +95,15 @@ class UserService:
             {"user_id": user.id, "email": user.email, "role": user.role.value}
         )
 
-        return Token(access_token=access_token, refresh_token=refresh_token)
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
 
     async def refresh_token(self, refresh_token: str) -> Token:
+        if self.token_service is None:
+            raise RuntimeError("TokenService не настроен для UserService.")
         try:
             access, refresh = self.token_service.rotate(refresh_token)
         except RefreshTokenReused as e:
@@ -111,7 +119,16 @@ class UserService:
         )
 
     async def logout_user(self, refresh_token: str) -> None:
+        if self.token_service is None:
+            raise RuntimeError("TokenService не настроен для UserService.")
         self.token_service.revoke(refresh_token)
 
     async def revoke_all_sessions(self, user_id: int) -> int:
+        if self.token_service is None:
+            raise RuntimeError("TokenService не настроен для UserService.")
         return self.token_service.revoke_all_for_user(user_id)
+
+    async def get_sessions(self, user_id: int) -> list[dict]:
+        if self.token_service is None:
+            raise RuntimeError("TokenService не настроен для UserService.")
+        return self.token_service.list_user_sessions(user_id)
