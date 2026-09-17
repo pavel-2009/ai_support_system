@@ -1,8 +1,9 @@
 """Сервисный слой пользователей: бизнес-правила и orchestration."""
 
-from app.core.security import create_tokens, hash_password, verify_password
+from app.core.security import hash_password, verify_password
 from app.core.uow import UnitOfWork
-from app.services.token_service import TokenService
+from app.core.config import settings
+from app.services.token_service import TokenService, RefreshTokenError, RefreshTokenNotFound, RefreshTokenReused
 from app.domain.events import UserDeleted, UserRegistered, UserUpdated
 from app.models.user import User, UserRole
 from app.schemas.token import Token
@@ -91,10 +92,26 @@ class UserService:
         access_token, refresh_token = self.token_service.issue_pair(
             {"user_id": user.id, "email": user.email, "role": user.role.value}
         )
-        
+
         return Token(access_token=access_token, refresh_token=refresh_token)
 
-    async def refresh_token(self, current_user: User) -> Token:
-        return create_tokens(
-            {"user_id": current_user.id, "email": current_user.email, "role": current_user.role.value}
+    async def refresh_token(self, refresh_token: str) -> Token:
+        try:
+            access, refresh = self.token_service.rotate(refresh_token)
+        except RefreshTokenReused as e:
+            raise ValueError(str(e)) from e
+        except RefreshTokenNotFound as e:
+            raise ValueError(str(e)) from e
+
+        return Token(
+            access_token=access,
+            refresh_token=refresh,
+            token_type="bearer",
+            expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,  
         )
+
+    async def logout_user(self, refresh_token: str) -> None:
+        self.token_service.revoke(refresh_token)
+
+    async def revoke_all_sessions(self, user_id: int) -> int:
+        return self.token_service.revoke_all_for_user(user_id)
