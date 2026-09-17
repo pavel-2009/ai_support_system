@@ -88,7 +88,11 @@ class UserService:
         if not user or not verify_password(data.password, user.hashed_password):
             raise ValueError("Неверные учетные данные.")
 
-        return create_tokens({"user_id": user.id, "email": user.email, "role": user.role.value})
+        access_token, refresh_token = self.token_service.issue_pair(
+            {"user_id": user.id, "email": user.email, "role": user.role.value}
+        )
+        
+        return Token(access_token=access_token, refresh_token=refresh_token)
 
     async def refresh_token(self, current_user: User) -> Token:
         return create_tokens(
