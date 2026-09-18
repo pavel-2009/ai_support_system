@@ -1,13 +1,11 @@
-import { Bot, User } from 'lucide-react';
+import { Bot, Headset, User } from 'lucide-react';
 import { formatTime } from '../../utils/date';
 import EmptyChat from './EmptyChat';
 
 export default function MessageList({ isWaitingAi, messages, onChoosePrompt, scrollTargetRef }) {
   return (
     <div className="messages-container">
-      {messages.length === 0
-        ? <EmptyChat onChoosePrompt={onChoosePrompt} />
-        : messages.map((message) => <MessageBubble key={message.id || `${message.created_at}-${message.content}`} message={message} />)}
+      {messages.length === 0 ? <EmptyChat onChoosePrompt={onChoosePrompt} /> : messages.map((message) => <MessageBubble key={message.id || `${message.created_at}-${message.content}`} message={message} />)}
       {isWaitingAi && <TypingIndicator />}
       <div ref={scrollTargetRef} />
     </div>
@@ -15,13 +13,17 @@ export default function MessageList({ isWaitingAi, messages, onChoosePrompt, scr
 }
 
 function MessageBubble({ message }) {
-  const isUser = message.sender_type === 'user';
+  const type = message.sender_type;
+  const isUser = type === 'user';
+  const isOperator = type === 'operator';
+  const label = isUser ? 'Пользователь' : isOperator ? 'Оператор' : 'ИИ';
+  const Icon = isUser ? User : isOperator ? Headset : Bot;
+  const roleClass = isUser ? 'user' : isOperator ? 'operator' : 'assistant';
   return (
-    <div className={`message-row ${isUser ? 'user' : 'assistant'}`}>
-      <div className={`message-avatar ${isUser ? 'user-avatar' : 'ai-avatar'}`}>
-        {isUser ? <User size={18} /> : <Bot size={18} />}
-      </div>
+    <div className={`message-row ${roleClass}`}>
+      <div className={`message-avatar ${roleClass}-avatar`}><Icon size={18} /></div>
       <div className="message-bubble">
+        <div className="message-author">{label}</div>
         <div>{message.content}</div>
         <div className="message-meta">
           {message.confidence != null && <span className="message-tag">AI {Math.round(message.confidence * 100)}%</span>}
@@ -34,13 +36,5 @@ function MessageBubble({ message }) {
 }
 
 function TypingIndicator() {
-  return (
-    <div className="message-row assistant">
-      <div className="message-avatar ai-avatar"><Bot size={18} /></div>
-      <div className="typing-indicator">
-        <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
-        <span className="typing-label">ИИ генерирует ответ...</span>
-      </div>
-    </div>
-  );
+  return <div className="message-row assistant"><div className="message-avatar assistant-avatar"><Bot size={18} /></div><div className="typing-indicator"><span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" /><span className="typing-label">ИИ генерирует ответ...</span></div></div>;
 }
