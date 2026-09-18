@@ -75,7 +75,10 @@ async def get_current_user_from_websocket(
     token_service: TokenService = Depends(get_token_service),
 ) -> User:
     """Получить текущего пользователя из JWT WebSocket-соединения."""
-    token = websocket.query_params.get("token")
+    authorization = websocket.headers.get("authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer":
+        token = ""
 
     if not token:
         await websocket.close(code=1008)

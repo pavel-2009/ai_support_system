@@ -10,7 +10,7 @@ from fastapi import (
     status,
 )
 
-from app.app.routers.users import user
+from app.routers.users import user
 from app.core.dependencies import (
     get_current_user,
     get_current_user_from_websocket,
@@ -33,7 +33,7 @@ router = APIRouter(
 )
 
 
-@router.websocket('ws', summary="WebSocket для получения уведомлений о новых диалогах и сообщениях")
+@router.websocket('ws')
 async def websocket_endpoint(
     websocket: WebSocket,
     current_user: User = Depends(get_current_user_from_websocket)

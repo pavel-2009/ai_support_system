@@ -4,13 +4,39 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocketDisconnect
 
+from app.core.websocket import OperatorConnectionManager
 from app.models.user import UserRole
 from app.routers.operator import conversation as operator_router
 
 
 class TestOperatorRouter:
+    @pytest.mark.asyncio
+    async def test_websocket_closes_for_regular_user(self):
+        websocket = SimpleNamespace(close=AsyncMock())
+        user = SimpleNamespace(id=1, role=UserRole.USER)
+
+        with patch.object(operator_router.operator_connection_manager, "connect", new_callable=AsyncMock) as connect_mock:
+            await operator_router.websocket_endpoint(websocket, current_user=user)
+
+        websocket.close.assert_awaited_once_with(code=1008)
+        connect_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_websocket_disconnects_operator_from_manager(self):
+        websocket = SimpleNamespace(
+            receive_text=AsyncMock(side_effect=WebSocketDisconnect()),
+        )
+        user = SimpleNamespace(id=2, role=UserRole.OPERATOR)
+
+        with patch.object(operator_router.operator_connection_manager, "connect", new_callable=AsyncMock) as connect_mock:
+            with patch.object(operator_router.operator_connection_manager, "disconnect") as disconnect_mock:
+                await operator_router.websocket_endpoint(websocket, current_user=user)
+
+        connect_mock.assert_awaited_once_with(user.id, websocket)
+        disconnect_mock.assert_called_once_with(user.id, websocket)
+
     @pytest.mark.asyncio
     async def test_get_conversation_queue_forbidden_for_regular_user(self):
         user = SimpleNamespace(id=1, role=UserRole.USER)
@@ -238,3 +264,47 @@ class TestLLMTasks:
                     process_llm_task.run(6)
 
         retry_mock.assert_not_called()
+
+
+class TestOperatorConnectionManager:
+    @pytest.mark.asyncio
+    async def test_connect_and_disconnect_manage_connections(self):
+        manager = OperatorConnectionManager()
+        websocket = MagicMock()
+        websocket.accept = AsyncMock()
+
+        await manager.connect(7, websocket)
+
+        websocket.accept.assert_awaited_once()
+        assert websocket in manager._connections[7]
+
+        manager.disconnect(7, websocket)
+
+        assert 7 not in manager._connections
+
+    @pytest.mark.asyncio
+    async def test_broadcast_sends_to_all_connections(self):
+        manager = OperatorConnectionManager()
+        first = MagicMock()
+        first.send_json = AsyncMock()
+        second = MagicMock()
+        second.send_json = AsyncMock()
+        manager._connections[7].update({first, second})
+
+        await manager.broadcast({"event": "conversation.escalated"})
+
+        first.send_json.assert_awaited_once_with({"event": "conversation.escalated"})
+        second.send_json.assert_awaited_once_with({"event": "conversation.escalated"})
+
+    @pytest.mark.asyncio
+    async def test_broadcast_removes_failed_connections(self):
+        manager = OperatorConnectionManager()
+        healthy = MagicMock()
+        healthy.send_json = AsyncMock()
+        failed = MagicMock()
+        failed.send_json = AsyncMock(side_effect=RuntimeError("closed"))
+        manager._connections[7].update({healthy, failed})
+
+        await manager.broadcast({"event": "conversation.escalated"})
+
+        assert manager._connections[7] == {healthy}

@@ -48,6 +48,42 @@ class TestGetCurrentUser:
         assert oauth2_scheme is not None
 
 
+class TestGetCurrentUserFromWebsocket:
+    @pytest.mark.asyncio
+    async def test_reads_bearer_token_from_authorization_header(self):
+        from app.core.dependencies import get_current_user_from_websocket
+        from app.core.security import create_access_token
+
+        token = create_access_token({"user_id": 1, "email": "test@example.com", "role": "operator"})
+        websocket = SimpleNamespace(
+            headers={"authorization": f"Bearer {token}"},
+            close=AsyncMock(),
+        )
+        user = SimpleNamespace(id=1)
+
+        with patch("app.services.user_service.UserService.get_user_by_id", AsyncMock(return_value=user)):
+            result = await get_current_user_from_websocket(websocket, uow=SimpleNamespace(users=AsyncMock()))
+
+        assert result is user
+        websocket.close.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rejects_query_string_token(self):
+        from app.core.dependencies import get_current_user_from_websocket
+
+        websocket = SimpleNamespace(
+            headers={},
+            query_params={"token": "token-in-url"},
+            close=AsyncMock(),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user_from_websocket(websocket, uow=SimpleNamespace(users=AsyncMock()))
+
+        assert exc_info.value.status_code == 401
+        websocket.close.assert_awaited_once_with(code=1008)
+
+
 class TestConversationAccess:
     def test_ensure_conversation_access_forbidden(self):
         from app.core.dependencies import ensure_conversation_access
