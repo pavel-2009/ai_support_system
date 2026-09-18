@@ -171,6 +171,48 @@ export const api = {
     });
   },
 
+  async sendTypingStatus(conversationId, isTyping = true) {
+    try {
+      return await request(`/conversations/${conversationId}/typing`, {
+        method: 'POST',
+        body: JSON.stringify({ is_typing: isTyping }),
+      });
+    } catch {
+      // Typing indicator fails silently
+      return null;
+    }
+  },
+
+  // Operator API
+  async getOperatorQueue() {
+    return await request('/operator/queue');
+  },
+
+  async assignOperator(conversationId) {
+    return await request(`/operator/assign/${conversationId}`, {
+      method: 'POST',
+    });
+  },
+
+  async replyAsOperator(conversationId, message) {
+    return await request(`/operator/reply/${conversationId}`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  async closeOperatorConversation(conversationId) {
+    return await request(`/operator/close/${conversationId}`, {
+      method: 'POST',
+    });
+  },
+
+  async backToAi(conversationId) {
+    return await request(`/operator/back_to_ai/${conversationId}`, {
+      method: 'POST',
+    });
+  },
+
   // System Health
   async checkHealth() {
     return await request('/health');

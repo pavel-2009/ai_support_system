@@ -1,6 +1,15 @@
-import { Sparkles } from 'lucide-react';
+import { Headphones, MessageSquare, Sparkles } from 'lucide-react';
 
-export default function AppWindow({ backendOnline, children, currentUser }) {
+export default function AppWindow({
+  activeMode = 'customer',
+  backendOnline,
+  children,
+  currentUser,
+  onModeChange,
+}) {
+  const isOperatorOrAdmin =
+    currentUser && (currentUser.role === 'operator' || currentUser.role === 'admin');
+
   return (
     <div className="app-viewport">
       <div className="ambient-bg" aria-hidden="true">
@@ -22,8 +31,32 @@ export default function AppWindow({ backendOnline, children, currentUser }) {
               <span className="status-beacon" />
               {backendOnline ? 'Online' : 'Offline'}
             </span>
+            {isOperatorOrAdmin && (
+              <div className="mode-switcher" role="tablist">
+                <button
+                  className={`mode-switch-btn ${activeMode === 'customer' ? 'active' : ''}`}
+                  onClick={() => onModeChange?.('customer')}
+                  role="tab"
+                  type="button"
+                >
+                  <MessageSquare size={13} />
+                  <span>Клиентский чат</span>
+                </button>
+                <button
+                  className={`mode-switch-btn ${activeMode === 'operator' ? 'active' : ''}`}
+                  onClick={() => onModeChange?.('operator')}
+                  role="tab"
+                  type="button"
+                >
+                  <Headphones size={13} />
+                  <span>Пульт оператора</span>
+                </button>
+              </div>
+            )}
           </div>
-          <div className="window-actions">{currentUser?.nickname || currentUser?.email}</div>
+          <div className="window-actions">
+            {currentUser?.nickname || currentUser?.email}
+          </div>
         </header>
         <section className="window-body">{children}</section>
       </main>

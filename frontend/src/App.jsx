@@ -1,41 +1,104 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, clearStoredTokens } from './services/api';
 import AppWindow from './components/layout/AppWindow';
 import AuthModal from './features/auth/AuthModal';
-import ChatSidebar from './features/conversations/ChatSidebar';
+import SessionsDialog from './features/auth/SessionsDialog';
 import ChatWorkspace from './features/chat/ChatWorkspace';
 import EmptyConversation from './features/chat/EmptyConversation';
+import ChatSidebar from './features/conversations/ChatSidebar';
+import { ToastProvider, useToasts } from './features/notifications/ToastManager';
+import OperatorDashboard from './features/operator/OperatorDashboard';
 import useAuthSession from './hooks/useAuthSession';
 import useBackendHealth from './hooks/useBackendHealth';
 import useConversations from './hooks/useConversations';
-import SessionsDialog from './features/auth/SessionsDialog';
+import useOperatorWebSocket from './hooks/useOperatorWebSocket';
+import { api, clearStoredTokens } from './services/api';
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+
+function AppContent() {
   const { currentUser, authLoading, setCurrentUser, logout } = useAuthSession();
   const backendOnline = useBackendHealth();
+  const { addToast } = useToasts();
+
+  const isOperatorOrAdmin = useMemo(() => {
+    return Boolean(currentUser && (currentUser.role === 'operator' || currentUser.role === 'admin'));
+  }, [currentUser]);
+
+  // Mode switcher: 'customer' or 'operator'
+  const [appMode, setAppMode] = useState('customer');
+
+  // Default operators to operator workspace on initial login
+  useEffect(() => {
+    if (currentUser?.role === 'operator') {
+      setAppMode('operator');
+    } else if (currentUser && currentUser.role !== 'admin') {
+      setAppMode('customer');
+    }
+  }, [currentUser]);
+
   const {
     activeConversationId,
     conversations,
     createConversation,
     loading: sidebarLoading,
+    messagesLoading,
     messages,
     refreshMessages,
     selectConversation,
     setMessages,
+    appendOptimisticMessage,
     updateConversation,
+    isCurrentWaitingAi,
+    setWaitingAiForConversation,
   } = useConversations(currentUser);
-  const [isSending, setIsSending] = useState(false);
-  const [isWaitingAi, setIsWaitingAi] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
 
-  useEffect(() => {
-    if (!activeConversationId) setIsWaitingAi(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [operatorTyping, setOperatorTyping] = useState({ isTyping: false, name: 'Оператор' });
+
+  // Handle WebSocket events in Customer mode (for operator typing and new messages)
+  const handleWsTyping = useCallback((data) => {
+    if (String(data.conversation_id) === String(activeConversationId)) {
+      if (data.sender_type === 'operator') {
+        setOperatorTyping({
+          isTyping: Boolean(data.is_typing),
+          name: data.sender_name || 'Оператор',
+        });
+      }
+    }
   }, [activeConversationId]);
 
-  useEffect(() => {
-    const latestMessage = messages.at(-1);
-    if (latestMessage && latestMessage.sender_type !== 'user') setIsWaitingAi(false);
-  }, [messages]);
+  const handleWsMessageSent = useCallback((data) => {
+    if (String(data.conversation_id) === String(activeConversationId)) {
+      refreshMessages(activeConversationId, { silent: true });
+    }
+  }, [activeConversationId, refreshMessages]);
+
+  const handleWsEscalated = useCallback((conversationId) => {
+    // Only alert if we're an operator or admin
+    if (isOperatorOrAdmin) {
+      addToast({
+        title: 'Новая эскалация',
+        message: `Обращение #${conversationId} переведено в очередь операторов.`,
+        type: 'escalation',
+        actionLabel: 'Перейти к оператору',
+        onAction: () => setAppMode('operator'),
+      });
+    }
+  }, [isOperatorOrAdmin, addToast]);
+
+  useOperatorWebSocket({
+    enabled: Boolean(isOperatorOrAdmin),
+    onTyping: handleWsTyping,
+    onMessageSent: handleWsMessageSent,
+    onEscalated: handleWsEscalated,
+  });
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId),
@@ -55,7 +118,9 @@ export default function App() {
     if (!activeConversationId || !content) return;
 
     setIsSending(true);
-    setIsWaitingAi(true);
+    // Mark ONLY this active conversation as waiting for AI
+    setWaitingAiForConversation(activeConversationId, true);
+
     const optimisticMessage = {
       id: `temporary-${Date.now()}`,
       conversation_id: activeConversationId,
@@ -64,20 +129,35 @@ export default function App() {
       is_auto_reply: false,
       created_at: new Date().toISOString(),
     };
-    setMessages((previousMessages) => [...previousMessages, optimisticMessage]);
+    appendOptimisticMessage(activeConversationId, optimisticMessage);
 
     try {
       await api.sendMessage(activeConversationId, content);
-      await refreshMessages(activeConversationId);
-      updateConversation(activeConversationId, { updated_at: new Date().toISOString() });
+      await refreshMessages(activeConversationId, { silent: true });
+      updateConversation(activeConversationId, {
+        status: 'pending_ai',
+        updated_at: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Send message error:', error);
       alert(`Не удалось отправить сообщение: ${error.message}`);
-      setIsWaitingAi(false);
+      setWaitingAiForConversation(activeConversationId, false);
     } finally {
       setIsSending(false);
     }
-  }, [activeConversationId, refreshMessages, setMessages, updateConversation]);
+  }, [
+    activeConversationId,
+    appendOptimisticMessage,
+    refreshMessages,
+    setWaitingAiForConversation,
+    updateConversation,
+  ]);
+
+  const handleUserTyping = useCallback((isTyping) => {
+    if (activeConversationId) {
+      api.sendTypingStatus(activeConversationId, isTyping);
+    }
+  }, [activeConversationId]);
 
   const handleCloseConversation = useCallback(async (conversationId) => {
     try {
@@ -100,11 +180,18 @@ export default function App() {
   }, [logout, setCurrentUser]);
 
   return (
-    <AppWindow backendOnline={backendOnline} currentUser={currentUser}>
+    <AppWindow
+      activeMode={appMode}
+      backendOnline={backendOnline}
+      currentUser={currentUser}
+      onModeChange={setAppMode}
+    >
       {authLoading ? (
         <div className="app-loading">Загрузка сессии...</div>
       ) : !currentUser ? (
         <AuthModal onLoginSuccess={setCurrentUser} />
+      ) : appMode === 'operator' && isOperatorOrAdmin ? (
+        <OperatorDashboard currentUser={currentUser} />
       ) : (
         <>
           <ChatSidebar
@@ -121,13 +208,25 @@ export default function App() {
             <ChatWorkspace
               conversation={activeConversation}
               isSending={isSending}
-              isWaitingAi={isWaitingAi}
+              isTyping={operatorTyping.isTyping}
+              isWaitingAi={isCurrentWaitingAi}
               messages={messages}
+              messagesLoading={messagesLoading}
               onCloseConversation={handleCloseConversation}
               onSendMessage={handleSendMessage}
+              onTyping={handleUserTyping}
+              typingSenderName={operatorTyping.name}
+              typingType="operator"
             />
-          ) : <EmptyConversation />}
-          {sessionsOpen && <SessionsDialog onClose={() => setSessionsOpen(false)} onLoggedOut={setCurrentUser} />}
+          ) : (
+            <EmptyConversation />
+          )}
+          {sessionsOpen && (
+            <SessionsDialog
+              onClose={() => setSessionsOpen(false)}
+              onLoggedOut={setCurrentUser}
+            />
+          )}
         </>
       )}
     </AppWindow>
