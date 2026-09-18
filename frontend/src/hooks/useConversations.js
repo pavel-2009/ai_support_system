@@ -26,7 +26,15 @@ export default function useConversations(currentUser) {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const items = isOperator ? await api.getOperatorQueue() : (await api.getConversations(1, 50)).items || [];
+      let items;
+      if (isOperator) {
+        const [queue, own] = await Promise.all([api.getOperatorQueue(), api.getConversations(1, 100)]);
+        const ownAssigned = (own.items || []).filter((item) => item.operator_id === currentUser.id);
+        items = Array.from(new Map([...queue, ...ownAssigned].map((item) => [item.id, item])).values());
+        items.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+      } else {
+        items = (await api.getConversations(1, 50)).items || [];
+      }
       setConversations(items);
       setActiveConversationId((currentId) => (
         currentId && items.some((item) => item.id === currentId) ? currentId : items[0]?.id || null
