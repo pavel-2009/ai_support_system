@@ -5,7 +5,7 @@ export default function ConversationHeader({ conversation, currentUser, isOperat
   const isClosed = conversation?.status === 'closed';
   const isAssignedToMe = isOperator && conversation?.operator_id === currentUser?.id;
   const isFree = isOperator && !conversation?.operator_id;
-  const canWork = !isOperator || isAssignedToMe || currentUser?.role === 'admin';
+  const canWork = !isOperator || isAssignedToMe;
 
   return (
     <header className={`chat-area-header ${isOperator ? 'chat-area-header--operator' : ''}`}>
