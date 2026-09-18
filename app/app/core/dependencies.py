@@ -1,6 +1,6 @@
 """Базовые зависимости для приложения."""
 
-from fastapi import Depends, HTTPException, Path, status, Request
+from fastapi import Depends, HTTPException, Path, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
 from collections.abc import AsyncIterator
 from redis import Redis
@@ -63,6 +63,49 @@ async def get_current_user(
         return await UserService(uow, token_service).get_user_by_id(int(user_id))
     except ValueError as exc:
         logger.exception("Ошибка авторизации: пользователь из токена не найден.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь из токена не найден.",
+        ) from exc
+
+
+async def get_current_user_from_websocket(
+    websocket: WebSocket,
+    uow: UnitOfWork = Depends(get_uow),
+    token_service: TokenService = Depends(get_token_service),
+) -> User:
+    """Получить текущего пользователя из JWT WebSocket-соединения."""
+    token = websocket.query_params.get("token")
+
+    if not token:
+        await websocket.close(code=1008)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Токен доступа не предоставлен.",
+        )
+
+    payload = verify_access_token(token)
+
+    if payload is None:
+        await websocket.close(code=1008)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный токен доступа.",
+        )
+
+    user_id = payload.get("user_id")
+
+    if user_id is None:
+        await websocket.close(code=1008)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Некорректный payload токена.",
+        )
+
+    try:
+        return await UserService(uow, token_service).get_user_by_id(int(user_id))
+    except ValueError as exc:
+        await websocket.close(code=1008)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Пользователь из токена не найден.",
