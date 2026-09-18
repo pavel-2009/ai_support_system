@@ -1,37 +1,47 @@
-"""WebSocket manager for conversation escalation handling."""
+"""Менеджер WebSocket-соединений операторов."""
 
-from typing import Dict, Set
+from collections import defaultdict
+from typing import Any
+
 from fastapi import WebSocket
 
 
-class WebSocketManager:
-    """Manages WebSocket connections for conversation escalation."""
+class OperatorConnectionManager:
+    """Управляет WebSocket-соединениями операторов."""
 
-    def __init__(self):
-        """Initialize the WebSocketManager with an empty connection dictionary."""
-        self.active_connections: Dict[int, Set] = {}
+    def __init__(self) -> None:
+        self._connections: dict[int, set[WebSocket]] = defaultdict(set)
 
-    def connect(self, conversation_id: int, websocket: WebSocket):
-        """Add a new WebSocket connection for a specific conversation."""
-        if conversation_id not in self.active_connections:
-            self.active_connections[conversation_id] = set()
-        self.active_connections[conversation_id].add(websocket)
+    async def connect(self, operator_id: int, websocket: WebSocket) -> None:
+        """Принять WebSocket и зарегистрировать оператора."""
+        await websocket.accept()
+        self._connections[operator_id].add(websocket)
 
-    def disconnect(self, conversation_id: int, websocket: WebSocket):
-        """Remove a WebSocket connection for a specific conversation."""
-        if conversation_id in self.active_connections:
-            self.active_connections[conversation_id].discard(websocket)
-            if not self.active_connections[conversation_id]:
-                del self.active_connections[conversation_id]
+    def disconnect(self, operator_id: int, websocket: WebSocket) -> None:
+        """Удалить WebSocket-соединение оператора."""
+        connections = self._connections.get(operator_id)
 
-    def send_to_operator(self, conversation_id: int, message: str):
-        """Send a message to all WebSocket connections associated with a specific conversation."""
-        if conversation_id in self.active_connections:
-            for websocket in self.active_connections[conversation_id]:
-                websocket.send_text(message)
+        if not connections:
+            return
 
-    def broadcast(self, message: str):
-        """Send a message to all active WebSocket connections across all conversations."""
-        for connections in self.active_connections.values():
-            for websocket in connections:
-                websocket.send_text(message)
+        connections.discard(websocket)
+
+        if not connections:
+            self._connections.pop(operator_id, None)
+
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        """Отправить сообщение всем подключённым операторам."""
+        disconnected: list[tuple[int, WebSocket]] = []
+
+        for operator_id, connections in self._connections.items():
+            for websocket in connections.copy():
+                try:
+                    await websocket.send_json(message)
+                except Exception:
+                    disconnected.append((operator_id, websocket))
+
+        for operator_id, websocket in disconnected:
+            self.disconnect(operator_id, websocket)
+
+
+operator_connection_manager = OperatorConnectionManager()
