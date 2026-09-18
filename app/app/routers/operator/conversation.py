@@ -1,19 +1,24 @@
 """Роутер для работы операторов с диалогами."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
 from app.core.dependencies import (
     get_current_user,
     get_conversation_service,
     get_message_service,
-    get_llm_service
 )
-
+from app.core.websocket import operator_connection_manager
 from app.models.user import User, UserRole
 from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
-from app.services.llm_service import LLMService
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,6 +29,33 @@ router = APIRouter(
     tags=["operator"],
     dependencies=[Depends(get_current_user)],
 )
+
+
+@router.websocket('ws', summary="WebSocket для получения уведомлений о новых диалогах и сообщениях")
+async def websocket_endpoint(
+    websocket: WebSocket
+) -> None:
+    """WS для real-time уведомлений операторов"""
+
+    user = websocket.scope.get("user")
+
+    if not user or user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        logger.warning("Попытка подключения к WebSocket без авторизации или с недопустимой ролью.")
+        return
+
+    await operator_connection_manager.connect(user.id, websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()  # Поддерживаем соединение открытым
+    except WebSocketDisconnect:
+        operator_connection_manager.disconnect(user.id, websocket)
+        logger.info(f"Оператор {user.id} отключился от WebSocket.")
+    except Exception as exc:
+        operator_connection_manager.disconnect(user.id, websocket)
+        logger.exception(f"Ошибка в WebSocket-соединении оператора {user.id}: {exc}")
+        raise
 
 
 @router.get("/queue", status_code=status.HTTP_200_OK, summary="Получить список диалогов в очереди")
