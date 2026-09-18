@@ -1,6 +1,6 @@
 """Пользовательский роутер для работы с диалогами."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from app.core.dependencies import (
     get_conversation_for_user,
@@ -123,3 +123,25 @@ async def get_conversation(
     if conversation.status == Status.CLOSED:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Диалог закрыт.")
     return conversation
+
+
+@router.post("/{conversation_id}/typing", status_code=status.HTTP_200_OK, summary="Отправить статус набора текста")
+async def user_typing(
+    conversation_id: int,
+    payload: dict = Body(default={"is_typing": True}),
+    current_user: User = Depends(require_authenticated_user),
+    conversation: Conversation = Depends(get_conversation_for_user),
+):
+    """Оповещение операторов о наборе текста пользователем."""
+    from app.core.websocket import operator_connection_manager
+
+    await operator_connection_manager.broadcast({
+        "type": "typing",
+        "conversation_id": str(conversation_id),
+        "sender_type": "user",
+        "sender_id": current_user.id,
+        "sender_name": current_user.nickname or current_user.email,
+        "is_typing": bool(payload.get("is_typing", True)),
+    })
+    return {"status": "ok"}
+

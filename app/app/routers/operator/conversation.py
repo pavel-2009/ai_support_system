@@ -48,8 +48,25 @@ async def websocket_endpoint(
     await operator_connection_manager.connect(current_user.id, websocket)
 
     try:
+        import json
         while True:
-            await websocket.receive_text()  # Поддерживаем соединение открытым
+            text = await websocket.receive_text()
+            try:
+                data = json.loads(text)
+                msg_type = data.get("type")
+                if msg_type == "typing":
+                    await operator_connection_manager.broadcast({
+                        "type": "typing",
+                        "conversation_id": str(data.get("conversation_id")),
+                        "sender_type": "operator",
+                        "sender_id": current_user.id,
+                        "sender_name": current_user.nickname or current_user.email,
+                        "is_typing": bool(data.get("is_typing", True)),
+                    })
+                elif msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except Exception:
+                pass
     except WebSocketDisconnect:
         operator_connection_manager.disconnect(current_user.id, websocket)
         logger.info(f"Оператор {current_user.id} отключился от WebSocket.")

@@ -46,6 +46,13 @@ async def track_metrics_on_create(event: ConversationCreated) -> None:
 async def notify_on_message_sent(event: MessageSent) -> None:
     logger.info("Сообщение %s отправлено в диалоге %s.", event.message_id, event.conversation_id)
     message_sent_total.inc()
+    await operator_connection_manager.broadcast(
+        {
+            "type": "message_sent",
+            "conversation_id": str(event.conversation_id),
+            "message_id": str(event.message_id),
+        }
+    )
 
 
 @event_bus.on_event(ConversationEscalated)
@@ -70,18 +77,38 @@ async def notify_on_escalation(event: ConversationEscalated) -> None:
 async def notify_on_operator_assigned(event: OperatorAssigned) -> None:
     logger.info("Оператор %s назначен на диалог %s.", event.operator_id, event.conversation_id)
     operator_assigned_total.inc()
+    await operator_connection_manager.broadcast(
+        {
+            "type": "operator_assigned",
+            "conversation_id": str(event.conversation_id),
+            "operator_id": event.operator_id,
+        }
+    )
 
 
 @event_bus.on_event(ConversationClosed)
 async def notify_on_conversation_closed(event: ConversationClosed) -> None:
     logger.info("Диалог %s закрыт.", event.conversation_id)
     conversation_closed_total.inc()
+    await operator_connection_manager.broadcast(
+        {
+            "type": "conversation_closed",
+            "conversation_id": str(event.conversation_id),
+        }
+    )
 
 
 @event_bus.on_event(ConversationReturnedToAI)
 async def notify_on_return_to_ai(event: ConversationReturnedToAI) -> None:
     logger.info("Диалог %s возвращён ИИ после оператора %s.", event.conversation_id, event.operator_id)
     conversation_returned_to_ai_total.inc()
+    await operator_connection_manager.broadcast(
+        {
+            "type": "conversation_returned_to_ai",
+            "conversation_id": str(event.conversation_id),
+            "operator_id": event.operator_id,
+        }
+    )
 
 
 @event_bus.on_event(ConversationMarkedForReview)

@@ -14,7 +14,19 @@ class OperatorConnectionManager:
 
     async def connect(self, operator_id: int, websocket: WebSocket) -> None:
         """Принять WebSocket и зарегистрировать оператора."""
-        await websocket.accept()
+        subprotocol = None
+        if hasattr(websocket, "headers") and hasattr(websocket.headers, "get"):
+            try:
+                protocols = websocket.headers.get("sec-websocket-protocol", "")
+                if isinstance(protocols, str) and "bearer" in [p.strip() for p in protocols.split(",")]:
+                    subprotocol = "bearer"
+            except Exception:
+                pass
+
+        if subprotocol:
+            await websocket.accept(subprotocol=subprotocol)
+        else:
+            await websocket.accept()
         self._connections[operator_id].add(websocket)
 
     def disconnect(self, operator_id: int, websocket: WebSocket) -> None:

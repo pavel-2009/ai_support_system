@@ -68,6 +68,24 @@ class TestGetCurrentUserFromWebsocket:
         websocket.close.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_reads_token_from_sec_websocket_protocol(self):
+        from app.core.dependencies import get_current_user_from_websocket
+        from app.core.security import create_access_token
+
+        token = create_access_token({"user_id": 2, "email": "op@example.com", "role": "operator"})
+        websocket = SimpleNamespace(
+            headers={"sec-websocket-protocol": f"bearer, {token}"},
+            close=AsyncMock(),
+        )
+        user = SimpleNamespace(id=2)
+
+        with patch("app.services.user_service.UserService.get_user_by_id", AsyncMock(return_value=user)):
+            result = await get_current_user_from_websocket(websocket, uow=SimpleNamespace(users=AsyncMock()))
+
+        assert result is user
+        websocket.close.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_rejects_query_string_token(self):
         from app.core.dependencies import get_current_user_from_websocket
 

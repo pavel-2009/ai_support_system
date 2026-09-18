@@ -81,6 +81,15 @@ async def get_current_user_from_websocket(
         token = ""
 
     if not token:
+        sec_protocol = websocket.headers.get("sec-websocket-protocol", "")
+        if sec_protocol:
+            parts = [p.strip() for p in sec_protocol.split(",") if p.strip()]
+            for part in parts:
+                if part.lower() != "bearer":
+                    token = part
+                    break
+
+    if not token:
         await websocket.close(code=1008)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
