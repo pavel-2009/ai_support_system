@@ -53,6 +53,7 @@ class UserGet(UserBase):
     """Модель для получения информации о пользователе."""
 
     id: int
+    role: str = "user"
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
