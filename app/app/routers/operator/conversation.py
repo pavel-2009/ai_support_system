@@ -10,8 +10,10 @@ from fastapi import (
     status,
 )
 
+from app.app.routers.users import user
 from app.core.dependencies import (
     get_current_user,
+    get_current_user_from_websocket,
     get_conversation_service,
     get_message_service,
 )
@@ -33,28 +35,27 @@ router = APIRouter(
 
 @router.websocket('ws', summary="WebSocket для получения уведомлений о новых диалогах и сообщениях")
 async def websocket_endpoint(
-    websocket: WebSocket
+    websocket: WebSocket,
+    current_user: User = Depends(get_current_user_from_websocket)
 ) -> None:
     """WS для real-time уведомлений операторов"""
 
-    user = websocket.scope.get("user")
-
-    if not user or user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
+    if not current_user or current_user.role not in (UserRole.OPERATOR, UserRole.ADMIN):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         logger.warning("Попытка подключения к WebSocket без авторизации или с недопустимой ролью.")
         return
 
-    await operator_connection_manager.connect(user.id, websocket)
+    await operator_connection_manager.connect(current_user.id, websocket)
 
     try:
         while True:
             await websocket.receive_text()  # Поддерживаем соединение открытым
     except WebSocketDisconnect:
-        operator_connection_manager.disconnect(user.id, websocket)
-        logger.info(f"Оператор {user.id} отключился от WebSocket.")
+        operator_connection_manager.disconnect(current_user.id, websocket)
+        logger.info(f"Оператор {current_user.id} отключился от WebSocket.")
     except Exception as exc:
-        operator_connection_manager.disconnect(user.id, websocket)
-        logger.exception(f"Ошибка в WebSocket-соединении оператора {user.id}: {exc}")
+        operator_connection_manager.disconnect(current_user.id, websocket)
+        logger.exception(f"Ошибка в WebSocket-соединении оператора {current_user.id}: {exc}")
         raise
 
 
