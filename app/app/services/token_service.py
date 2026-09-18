@@ -164,7 +164,7 @@ class TokenService:
 
     def _issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
         """Создание нового refresh-токена и сохранение его в Redis."""
-        token = secrets.token_urlsafe(token)
+        token = secrets.token_urlsafe(32)
         token_hash = _hash_token(token)
         ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
         expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
