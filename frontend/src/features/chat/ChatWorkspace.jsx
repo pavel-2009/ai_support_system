@@ -3,59 +3,34 @@ import ConversationHeader from './ConversationHeader';
 import MessageComposer from './MessageComposer';
 import MessageList from './MessageList';
 
-export default function ChatWorkspace({
-  conversation,
-  isWaitingAi = false,
-  isTyping = false,
-  typingType = 'operator',
-  typingSenderName,
-  messages = [],
-  messagesLoading = false,
-  isSending = false,
-  onCloseConversation,
-  onSendMessage,
-  onTyping,
-}) {
+export default function ChatWorkspace(props) {
+  const { conversation, currentUser, isOperator, isWaitingAi, messages } = props;
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef(null);
+  const previousConversationId = useRef(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isWaitingAi, isTyping]);
+    const changed = previousConversationId.current !== conversation.id;
+    previousConversationId.current = conversation.id;
+    if (changed) setInputText('');
+    // Do not animate or smooth-scroll when switching conversations.
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, [conversation.id]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, [messages.length, isWaitingAi]);
 
   return (
-    <div className="chat-area">
+    <div className={`chat-area ${isOperator ? 'chat-area--operator' : ''}`}>
       <ConversationHeader
-        conversation={conversation}
-        onCloseConversation={onCloseConversation}
+        conversation={conversation} currentUser={currentUser} isOperator={isOperator}
+        onAssign={props.onAssign} onBackToAi={props.onBackToAi} onCloseConversation={props.onCloseConversation}
       />
-      {messagesLoading && messages.length === 0 ? (
-        <div className="chat-loading-overlay">
-          <div className="spinner-dots">
-            <span className="dot" />
-            <span className="dot" />
-            <span className="dot" />
-          </div>
-          <span>Загрузка сообщений...</span>
-        </div>
-      ) : (
-        <MessageList
-          isTyping={isTyping}
-          isWaitingAi={isWaitingAi}
-          messages={messages}
-          onChoosePrompt={setInputText}
-          scrollTargetRef={messagesEndRef}
-          typingSenderName={typingSenderName}
-          typingType={typingType}
-        />
-      )}
+      <MessageList isWaitingAi={isWaitingAi} messages={messages} onChoosePrompt={setInputText} scrollTargetRef={messagesEndRef} />
       <MessageComposer
-        conversation={conversation}
-        inputText={inputText}
-        isSending={isSending}
-        onChange={setInputText}
-        onSendMessage={onSendMessage}
-        onTyping={onTyping}
+        conversation={conversation} currentUser={currentUser} isOperator={isOperator}
+        inputText={inputText} isSending={props.isSending} onChange={setInputText} onSendMessage={props.onSendMessage}
       />
     </div>
   );

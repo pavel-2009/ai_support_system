@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 
+const OPERATOR_ROLES = new Set(['operator', 'admin']);
+
 export default function useConversations(currentUser) {
+  const isOperator = useMemo(() => OPERATOR_ROLES.has(currentUser?.role), [currentUser?.role]);
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [messagesByConvId, setMessagesByConvId] = useState({});
@@ -48,7 +51,7 @@ export default function useConversations(currentUser) {
 
       return nextMessages;
     } catch (error) {
-      if (!silent) console.error('Failed to load messages for conversation:', conversationId, error);
+      if (!silent) console.error('Failed to load messages:', error);
       return [];
     } finally {
       if (!silent) {
@@ -62,56 +65,65 @@ export default function useConversations(currentUser) {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const { items = [] } = await api.getConversations(1, 50);
+      let items;
+      if (isOperator) {
+        const [queue, own] = await Promise.all([api.getOperatorQueue(), api.getConversations(1, 100)]);
+        const ownAssigned = (own.items || []).filter((item) => item.operator_id === currentUser.id);
+        items = Array.from(new Map([...queue, ...ownAssigned].map((item) => [item.id, item])).values());
+        items.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+      } else {
+        items = (await api.getConversations(1, 50)).items || [];
+      }
       setConversations(items);
-      setActiveConversationId((currentId) => currentId || items[0]?.id || null);
+      setActiveConversationId((currentId) => (
+        currentId && items.some((item) => item.id === currentId) ? currentId : items[0]?.id || null
+      ));
     } catch (error) {
       console.error('Failed to fetch conversations:', error);
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, isOperator]);
 
   // Initial load
   useEffect(() => {
-    if (currentUser) {
-      fetchConversations();
+    if (!currentUser) {
+      setConversations([]);
+      setActiveConversationId(null);
+      setMessages([]);
       return;
     }
-    setConversations([]);
-    setActiveConversationId(null);
-    setMessagesByConvId({});
-    setWaitingAiByConvId({});
+    fetchConversations();
   }, [currentUser, fetchConversations]);
 
-  // When active conversation changes, load its messages
+  const activeConversation = useMemo(
+    () => conversations.find((conversation) => conversation.id === activeConversationId),
+    [conversations, activeConversationId],
+  );
+
   useEffect(() => {
-    if (!activeConversationId) return;
+    if (!activeConversationId) {
+      setMessages([]);
+      return;
+    }
+    if (isOperator && activeConversation?.operator_id !== currentUser.id && currentUser.role !== 'admin') {
+      setMessages([]);
+      return;
+    }
     refreshMessages(activeConversationId);
-  }, [activeConversationId, refreshMessages]);
+  }, [activeConversationId, activeConversation?.operator_id, currentUser?.id, currentUser?.role, isOperator, refreshMessages]);
 
   // Periodic background polling for active conversation
   useEffect(() => {
-    if (!activeConversationId || !currentUser) return undefined;
-    const intervalId = window.setInterval(() => {
-      refreshMessages(activeConversationId, { silent: true });
-    }, 2500);
-    return () => window.clearInterval(intervalId);
-  }, [activeConversationId, currentUser, refreshMessages]);
-
-  // Periodic background sync for conversations list to keep statuses up to date
-  useEffect(() => {
     if (!currentUser) return undefined;
-    const intervalId = window.setInterval(async () => {
-      try {
-        const { items = [] } = await api.getConversations(1, 50);
-        setConversations(items);
-      } catch {
-        // Ignore background polling errors
+    const intervalId = window.setInterval(() => {
+      fetchConversations();
+      if (activeConversationId && (!isOperator || activeConversation?.operator_id === currentUser.id || currentUser.role === 'admin')) {
+        refreshMessages(activeConversationId, { silent: true });
       }
-    }, 6000);
+    }, 5000);
     return () => window.clearInterval(intervalId);
-  }, [currentUser]);
+  }, [currentUser, isOperator, activeConversationId, activeConversation?.operator_id, fetchConversations, refreshMessages]);
 
   const createConversation = useCallback(async (priority = 'medium') => {
     const conversation = await api.createConversation(priority, 'web');
@@ -146,33 +158,14 @@ export default function useConversations(currentUser) {
     }));
   }, []);
 
-  // Active conversation's messages
-  const currentMessages = activeConversationId ? (messagesByConvId[activeConversationId] || []) : [];
-  const isCurrentWaitingAi = activeConversationId ? Boolean(waitingAiByConvId[activeConversationId]) : false;
+  const selectConversation = useCallback((id) => {
+    setActiveConversationId(id);
+    setMessages([]);
+  }, []);
 
   return {
-    activeConversationId,
-    conversations,
-    createConversation,
-    loading,
-    messagesLoading,
-    messages: currentMessages,
-    messagesByConvId,
-    refreshMessages,
-    selectConversation: setActiveConversationId,
-    setMessages: (newMessagesOrFn) => {
-      if (!activeConversationId) return;
-      setMessagesByConvId((previous) => {
-        const prevMessages = previous[activeConversationId] || [];
-        const next = typeof newMessagesOrFn === 'function' ? newMessagesOrFn(prevMessages) : newMessagesOrFn;
-        return { ...previous, [activeConversationId]: next };
-      });
-    },
-    appendOptimisticMessage,
-    updateConversation,
-    waitingAiByConvId,
-    isCurrentWaitingAi,
-    setWaitingAiForConversation,
-    fetchConversations,
+    activeConversationId, activeConversation, conversations, createConversation, isOperator,
+    loading, messages, refreshMessages, selectConversation, setMessages, updateConversation,
+    refreshConversations: fetchConversations,
   };
 }
