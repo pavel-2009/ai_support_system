@@ -4,6 +4,7 @@ from prometheus_client import Counter
 
 from app.core.event_bus import event_bus
 from app.core.logging import get_logger
+from app.core.websocket import operator_connection_manager
 from app.domain.events import (
     ConversationClosed,
     ConversationCreated,
@@ -37,7 +38,7 @@ async def notify_operators_on_create(event: ConversationCreated) -> None:
 
 
 @event_bus.on_event(ConversationCreated)
-def track_metrics_on_create(event: ConversationCreated) -> None:
+async def track_metrics_on_create(event: ConversationCreated) -> None:
     conversation_created_total.inc()
 
 
@@ -48,49 +49,60 @@ async def notify_on_message_sent(event: MessageSent) -> None:
 
 
 @event_bus.on_event(ConversationEscalated)
-def log_escalation(event: ConversationEscalated) -> None:
-    """Записать эскалацию диалога в лог."""
-    logger.warning("Диалог %s эскалирован оператору.", event.conversation_id)
+async def notify_on_escalation(event: ConversationEscalated) -> None:
+    """Уведомить операторов об эскалации диалога."""
+    logger.warning(
+        "Диалог %s эскалирован оператору.",
+        event.conversation_id,
+    )
+
     conversation_escalated_total.inc()
+
+    await operator_connection_manager.broadcast(
+        {
+            "type": "conversation_escalated",
+            "conversation_id": str(event.conversation_id),
+        }
+    )
 
 
 @event_bus.on_event(OperatorAssigned)
-def notify_on_operator_assigned(event: OperatorAssigned) -> None:
+async def notify_on_operator_assigned(event: OperatorAssigned) -> None:
     logger.info("Оператор %s назначен на диалог %s.", event.operator_id, event.conversation_id)
     operator_assigned_total.inc()
 
 
 @event_bus.on_event(ConversationClosed)
-def notify_on_conversation_closed(event: ConversationClosed) -> None:
+async def notify_on_conversation_closed(event: ConversationClosed) -> None:
     logger.info("Диалог %s закрыт.", event.conversation_id)
     conversation_closed_total.inc()
 
 
 @event_bus.on_event(ConversationReturnedToAI)
-def notify_on_return_to_ai(event: ConversationReturnedToAI) -> None:
+async def notify_on_return_to_ai(event: ConversationReturnedToAI) -> None:
     logger.info("Диалог %s возвращён ИИ после оператора %s.", event.conversation_id, event.operator_id)
     conversation_returned_to_ai_total.inc()
 
 
 @event_bus.on_event(ConversationMarkedForReview)
-def notify_on_review_required(event: ConversationMarkedForReview) -> None:
+async def notify_on_review_required(event: ConversationMarkedForReview) -> None:
     logger.warning("Диалог %s требует ревью оператора.", event.conversation_id)
     conversation_review_total.inc()
 
 
 @event_bus.on_event(UserRegistered)
-def track_user_registered(event: UserRegistered) -> None:
+async def track_user_registered(event: UserRegistered) -> None:
     logger.info("Пользователь %s зарегистрирован.", event.user_id)
     user_registered_total.inc()
 
 
 @event_bus.on_event(UserUpdated)
-def track_user_updated(event: UserUpdated) -> None:
+async def track_user_updated(event: UserUpdated) -> None:
     logger.info("Пользователь %s обновлён.", event.user_id)
     user_updated_total.inc()
 
 
 @event_bus.on_event(UserDeleted)
-def track_user_deleted(event: UserDeleted) -> None:
+async def track_user_deleted(event: UserDeleted) -> None:
     logger.info("Пользователь %s удалён.", event.user_id)
     user_deleted_total.inc()
