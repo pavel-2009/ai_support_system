@@ -21,18 +21,13 @@ STATE_GRAPH = {
     Status.PENDING_AI: [Status.OPEN, Status.ESCALATED, Status.CLOSED],
     Status.ESCALATED: [Status.WAITING_FOR_OPERATOR, Status.CLOSED],
     Status.WAITING_FOR_OPERATOR: [Status.WAITING_FOR_USER, Status.OPEN, Status.CLOSED],
-    Status.WAITING_FOR_USER: [Status.WAITING_FOR_OPERATOR, Status.PENDING_AI, Status.CLOSED],
+    Status.WAITING_FOR_USER: [Status.WAITING_FOR_OPERATOR, Status.OPEN, Status.PENDING_AI, Status.CLOSED],
     Status.CLOSED: [],
 }
 
 
 class ConversationStateMachine:
-    """Own conversation status transitions and persist their results.
-
-    This is intentionally the only persistence boundary allowed to mutate
-    conversation status. It is created by UnitOfWork and uses the UnitOfWork
-    session, so transitions participate in the same transaction.
-    """
+    """Own conversation status transitions and persist their results."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -174,6 +169,26 @@ class ConversationStateMachine:
         await self.session.refresh(conversation)
         return conversation
 
+    async def operator_replied(self, conversation_id: int, operator_id: int) -> Conversation | None:
+        """Move an assigned conversation to waiting for the user after a reply."""
+        conversation = await self._get_conversation(conversation_id)
+        if conversation is None or conversation.operator_id != operator_id:
+            return None
+
+        previous_status = await self._transition(conversation, Status.WAITING_FOR_USER)
+        if previous_status is None:
+            return None
+
+        await self._create_audit_log(
+            conversation_id=conversation.id,
+            actor_id=operator_id,
+            action="operator_replied",
+            from_status=previous_status,
+            to_status=Status.WAITING_FOR_USER,
+        )
+        await self.session.refresh(conversation)
+        return conversation
+
     async def close(self, conversation_id: int) -> Conversation | None:
         """Close a conversation and release its active operator slot."""
         conversation = await self._get_conversation(conversation_id)
@@ -209,7 +224,9 @@ class ConversationStateMachine:
         if conversation is None:
             return None
 
-        if conversation.status != Status.WAITING_FOR_OPERATOR or conversation.operator_id is None:
+        if conversation.status not in (Status.WAITING_FOR_OPERATOR, Status.WAITING_FOR_USER):
+            return None
+        if conversation.operator_id is None:
             return None
 
         last_message = (
