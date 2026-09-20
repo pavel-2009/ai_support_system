@@ -26,12 +26,17 @@ def configure_logging() -> None:
                 "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "standard",
-                    "level": "DEBUG",
+                    "level": "INFO",
                 }
             },
             "root": {
                 "handlers": ["console"],
-                "level": "DEBUG",
+                "level": "INFO",
+            },
+            "loggers": {
+                "sqlalchemy.engine": {"level": "WARNING"},
+                "sqlalchemy.pool": {"level": "WARNING"},
+                "aiosqlite": {"level": "WARNING"},
             },
         }
     )

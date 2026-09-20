@@ -10,6 +10,7 @@ from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
 from app.db import create_database_engine
+from app.models.conversation import Status
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
 from app.services.conversation_service import ConversationService
@@ -52,6 +53,12 @@ async def _process_llm_task_async(conversation_id: int) -> None:
 
     try:
         async with UnitOfWork(session_factory) as uow:
+            conversation_repository = getattr(uow, "conversation", None)
+            if conversation_repository is not None:
+                conversation = await conversation_repository.get_conversation_by_id(conversation_id)
+                if conversation is None or conversation.status != Status.PENDING_AI:
+                    logger.info("LLM PIPELINE SKIPPED: conversation_id=%s is no longer awaiting AI", conversation_id)
+                    return
             logger.info(
                 "LLM PIPELINE: generating response for conversation_id=%s",
                 conversation_id,

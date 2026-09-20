@@ -17,7 +17,7 @@ from app.core.dependencies import (
 from app.core.idempotency import IdempotencyKey
 from app.core.logging import get_logger
 from app.core.rate_limit import get_user_identifier, limiter
-from app.models.conversation import Conversation
+from app.models.conversation import Conversation, Status
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.message import MessageCreate, MessageGet
@@ -106,11 +106,12 @@ async def send_message(
             idempotency.delete(storage_key)
         raise
 
-    try:
-        process_llm_task.delay(conversation_id=conversation.id)
-    except Exception:
-        # Enqueue failures are operationally important and should still be visible.
-        logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
+    # Operator-owned conversations never restart the AI after a customer reply.
+    if conversation.status == Status.PENDING_AI:
+        try:
+            process_llm_task.delay(conversation_id=conversation.id)
+        except Exception:
+            logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
 
     return response
 

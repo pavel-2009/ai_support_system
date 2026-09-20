@@ -102,6 +102,12 @@ async def notify_on_return_to_ai(event: ConversationReturnedToAI) -> None:
 @event_bus.on_event(ConversationMarkedForReview)
 async def notify_on_review_required(event: ConversationMarkedForReview) -> None:
     conversation_review_total.inc()
+    await operator_connection_manager.broadcast(
+        {
+            "type": "conversation_escalated",
+            "conversation_id": str(event.conversation_id),
+        }
+    )
 
 
 @event_bus.on_event(UserRegistered)

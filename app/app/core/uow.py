@@ -35,7 +35,6 @@ class UnitOfWork:
         self.message = MessageRepository(self.session)
         self.conversation = ConversationRepository(self.session)
         self.state_machine = ConversationStateMachine(self.session)
-        logger.debug("DB UOW OPEN: session_id=%s", id(self.session))
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -48,16 +47,13 @@ class UnitOfWork:
                 )
                 await self.session.rollback()
             else:
-                logger.debug("DB TRANSACTION COMMIT START: session_id=%s", id(self.session))
                 await self.session.commit()
-                logger.debug("DB TRANSACTION COMMIT OK: session_id=%s", id(self.session))
                 await self._publish_events()
         except Exception:
             logger.exception("DB TRANSACTION FINALIZATION FAILED: session_id=%s", id(self.session))
             raise
         finally:
             await self.session.close()
-            logger.debug("DB UOW CLOSE: session_id=%s", id(self.session))
 
     async def _publish_events(self) -> None:
         """Опубликовать post-commit события, не откатывая уже успешную транзакцию."""

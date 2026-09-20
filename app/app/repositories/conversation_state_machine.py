@@ -189,6 +189,38 @@ class ConversationStateMachine:
         await self.session.refresh(conversation)
         return conversation
 
+    async def user_replied(self, conversation_id: int) -> Conversation | None:
+        """Advance a customer reply without handing an operator chat back to AI."""
+        conversation = await self._get_conversation(conversation_id)
+        if conversation is None:
+            return None
+
+        if conversation.status == Status.OPEN:
+            next_status = Status.PENDING_AI
+        elif conversation.status == Status.WAITING_FOR_USER and conversation.operator_id is not None:
+            next_status = Status.WAITING_FOR_OPERATOR
+        else:
+            return None
+
+        previous_status = await self._transition(conversation, next_status)
+        if previous_status is None:
+            return None
+        await self._create_audit_log(conversation.id, "user_replied", from_status=previous_status, to_status=next_status)
+        await self.session.refresh(conversation)
+        return conversation
+
+    async def ai_replied(self, conversation_id: int) -> Conversation | None:
+        """Complete only an AI job that is still active for this conversation."""
+        conversation = await self._get_conversation(conversation_id)
+        if conversation is None:
+            return None
+        previous_status = await self._transition(conversation, Status.OPEN)
+        if previous_status is None:
+            return None
+        await self._create_audit_log(conversation.id, "ai_replied", from_status=previous_status, to_status=Status.OPEN)
+        await self.session.refresh(conversation)
+        return conversation
+
     async def close(self, conversation_id: int) -> Conversation | None:
         """Close a conversation and release its active operator slot."""
         conversation = await self._get_conversation(conversation_id)

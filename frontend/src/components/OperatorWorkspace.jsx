@@ -9,6 +9,14 @@ const actionLabels = {
   close: 'Закрыть диалог',
 };
 
+const notificationLabels = {
+  conversation_escalated: 'Новый диалог ожидает оператора',
+  message_sent: 'В диалоге появилось новое сообщение',
+  operator_assigned: 'Диалог назначен оператору',
+  conversation_closed: 'Диалог закрыт',
+  conversation_returned_to_ai: 'Диалог возвращён AI',
+};
+
 export function OperatorWorkspace({ api, accessToken, user }) {
   const [queue, setQueue] = useState([]);
   const [active, setActive] = useState(null);
@@ -44,6 +52,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
 
   const connected = useOperatorSocket(accessToken, useCallback((event) => {
     if (event.type === 'typing') return;
+    if (notificationLabels[event.type]) setNotice(notificationLabels[event.type]);
     refreshQueue();
     const current = activeRef.current;
     if (current && String(event.conversation_id) === String(current.id)) {
