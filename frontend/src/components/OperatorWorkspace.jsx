@@ -1,13 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { statusLabels } from './ConversationList';
 import { useOperatorSocket } from '../hooks/useOperatorSocket';
-
-const actionLabels = {
-  assign: 'Взять в работу',
-  backToAi: 'Вернуть AI',
-  close: 'Закрыть диалог',
-};
 
 const notificationLabels = {
   conversation_escalated: 'Новый диалог ожидает оператора',
@@ -17,8 +11,16 @@ const notificationLabels = {
   conversation_returned_to_ai: 'Диалог возвращён AI',
 };
 
+const sortConversations = (items) => [...items].sort((a, b) => {
+  const priority = { high: 2, medium: 1, low: 0 };
+  const priorityDiff = (priority[b.priority] ?? 0) - (priority[a.priority] ?? 0);
+  if (priorityDiff) return priorityDiff;
+  return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
+});
+
 export function OperatorWorkspace({ api, accessToken, user }) {
   const [queue, setQueue] = useState([]);
+  const [mine, setMine] = useState([]);
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
   const [notice, setNotice] = useState('');
@@ -26,57 +28,86 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   const [busy, setBusy] = useState('');
   const activeRef = useRef(null);
 
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
+  useEffect(() => { activeRef.current = active; }, [active]);
 
-  const refreshQueue = useCallback(async () => {
-    try { setQueue(await api.queue()); }
-    catch (error) { setNotice(error.message); }
-    finally { setLoading(false); }
-  }, [api]);
+  const refresh = useCallback(async () => {
+    try {
+      const [nextQueue, ownResponse] = await Promise.all([
+        api.queue(),
+        api.conversations({ operatorId: user.id }),
+      ]);
+      setQueue(sortConversations(nextQueue || []));
+      setMine(sortConversations(ownResponse.items || []));
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, user.id]);
 
-  useEffect(() => { refreshQueue(); }, [refreshQueue]);
+  useEffect(() => { refresh(); }, [refresh]);
+
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active) {
+      setMessages([]);
+      return undefined;
+    }
+
     let cancelled = false;
-    const refresh = async () => {
-      try { const next = await api.messages(active.id); if (!cancelled) setMessages(next); }
-      catch (error) { if (!cancelled) setNotice(error.message); }
-    };
     setMessages([]);
-    refresh();
-    const interval = window.setInterval(refresh, 3000);
-    return () => { cancelled = true; window.clearInterval(interval); };
+
+    const load = async () => {
+      try {
+        const next = await api.messages(active.id);
+        if (!cancelled) setMessages(next);
+      } catch (error) {
+        if (!cancelled && error.status !== 410) setNotice(error.message);
+      }
+    };
+
+    load();
+    const interval = window.setInterval(load, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [active?.id, api]);
 
-  const connected = useOperatorSocket(accessToken, useCallback((event) => {
+  const onSocketEvent = useCallback((event) => {
     if (event.type === 'typing') return;
     if (notificationLabels[event.type]) setNotice(notificationLabels[event.type]);
-    refreshQueue();
+    refresh();
+
     const current = activeRef.current;
     if (current && String(event.conversation_id) === String(current.id)) {
       api.messages(current.id).then(setMessages).catch(() => {});
     }
-  }, [api, refreshQueue]));
+  }, [api, refresh]);
+
+  const connected = useOperatorSocket(accessToken, onSocketEvent);
+
+  const selectActive = useCallback((conversation) => {
+    setNotice('');
+    setActive(conversation);
+  }, []);
 
   async function action(name, method) {
     if (!active || busy) return;
     setBusy(name);
     setNotice('');
+
     try {
       const result = await method(active.id);
       if (result?.id) {
         setActive(result);
-        if (name === 'assign') {
-          setMessages(await api.messages(result.id));
-        }
+        setMessages(await api.messages(result.id));
       } else if (result?.status) {
         setActive((current) => current ? { ...current, status: result.status } : current);
       }
-      if (name === 'close') setActive((current) => current ? { ...current, status: 'closed' } : current);
-      await refreshQueue();
-      setNotice(name === 'assign' ? 'Диалог взят в работу' : name === 'backToAi' ? 'Диалог возвращён AI' : 'Диалог закрыт');
+      await refresh();
+
+      if (name === 'backToAi' || name === 'close') setActive(null);
+      else setNotice(name === 'assign' ? 'Диалог взят в работу.' : '');
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -85,14 +116,15 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   }
 
   async function reply(content) {
-    if (!active || busy || active.status === 'closed') return;
+    if (!active || busy || active.operator_id !== user.id || active.status !== 'waiting_for_operator') return;
+
     setBusy('reply');
     setNotice('');
     try {
       const message = await api.operatorReply(active.id, content);
       setMessages((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
       setActive((current) => current ? { ...current, status: 'waiting_for_user' } : current);
-      await refreshQueue();
+      await refresh();
     } catch (error) {
       setNotice(error.message);
       throw error;
@@ -101,47 +133,118 @@ export function OperatorWorkspace({ api, accessToken, user }) {
     }
   }
 
-  const canAssign = active && !active.operator_id && active.status === 'escalated';
-  const canReply = active && active.operator_id === user.id && active.status === 'waiting_for_operator';
-  const canReturn = active && active.operator_id === user.id && ['waiting_for_operator', 'waiting_for_user'].includes(active.status);
-  const canClose = active && active.status !== 'closed';
+  const unassignedQueue = useMemo(
+    () => queue.filter((item) => item.status === 'escalated' && !item.operator_id),
+    [queue],
+  );
 
-  return <main className="operator">
-    <section className="queue-panel">
-      <header><div><p className="eyebrow">LIVE QUEUE</p><h2>Обращения</h2></div><span className={`live ${connected ? 'connected' : ''}`}>{connected ? '● онлайн' : '○ переподключение'}</span></header>
-      {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')}>×</button></div>}
-      <div className="queue-list">
-        {loading ? <p className="muted">Загружаем очередь…</p> : queue.map((item) => <button key={item.id} className={`queue-card ${active?.id === item.id ? 'selected' : ''}`} onClick={() => setActive(item)}>
-          <span className={`priority ${item.priority}`}>{item.priority === 'high' ? 'Срочно' : 'Обычный'}</span>
-          <b>Диалог #{item.id}</b>
-          <small><i className={`status-dot ${item.status}`} />{statusLabels[item.status] || item.status}</small>
-          {item.operator_id === user.id && <em>Ваш диалог</em>}
-        </button>)}
-        {!loading && !queue.length && <p className="muted">Очередь пуста — новых обращений нет.</p>}
-      </div>
-    </section>
-    <section className="operator-chat">
-      {active ? <>
-        <div className="operator-actions">
-          <div><span>Диалог #{active.id}</span><small>{statusLabels[active.status] || active.status}</small></div>
-          <div className="action-group">
-            {canAssign && <button className="secondary" disabled={!!busy} onClick={() => action('assign', api.assign)}>{busy === 'assign' ? 'Назначаем…' : actionLabels.assign}</button>}
-            {canReturn && <button className="secondary" disabled={!!busy} onClick={() => action('backToAi', api.backToAi)}>{busy === 'backToAi' ? 'Возвращаем…' : actionLabels.backToAi}</button>}
-            {canClose && <button className="danger" disabled={!!busy} onClick={() => action('close', api.close)}>{busy === 'close' ? 'Закрываем…' : actionLabels.close}</button>}
+  const own = useMemo(
+    () => mine.filter((item) => item.operator_id === user.id),
+    [mine, user.id],
+  );
+
+  const canAssign = active?.status === 'escalated' && !active.operator_id;
+  const canReply = active?.operator_id === user.id && active?.status === 'waiting_for_operator';
+  const canReturn = active?.operator_id === user.id && ['waiting_for_operator', 'waiting_for_user'].includes(active.status);
+  const canClose = active?.operator_id === user.id && active.status !== 'closed';
+
+  const ConversationCard = ({ item }) => (
+    <button
+      type="button"
+      key={item.id}
+      className={`queue-card ${active?.id === item.id ? 'selected' : ''}`}
+      onClick={() => selectActive(item)}
+    >
+      <span className={`priority ${item.priority}`}>{item.priority === 'high' ? 'Срочно' : 'Обычный'}</span>
+      <b>Диалог #{item.id}</b>
+      <small><i className={`status-dot ${item.status}`} />{statusLabels[item.status] || item.status}</small>
+      {item.operator_id === user.id && <em>Ваш диалог</em>}
+    </button>
+  );
+
+  return (
+    <main className="operator">
+      <section className="queue-panel">
+        <header>
+          <div><p className="eyebrow">LIVE QUEUE</p><h2>Операторская</h2></div>
+          <span className={`live ${connected ? 'connected' : ''}`}>
+            {connected ? '● онлайн' : '○ переподключение'}
+          </span>
+        </header>
+
+        {notice && (
+          <div className="notice" role="status">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice('')} aria-label="Закрыть уведомление">×</button>
           </div>
-        </div>
-        <ChatPanel
-          conversation={active}
-          messages={messages}
-          userId={user.id}
-          isLoading={false}
-          isSending={busy === 'reply'}
-          isAiGenerating={false}
-          onSend={reply}
-          readOnly={!canReply}
-          autoFocusComposer={canReply && !busy}
-        />
-      </> : <div className="empty-state"><div>◉</div><h2>Рабочее место</h2><p>Выберите обращение из очереди.</p></div>}
-    </section>
-  </main>;
+        )}
+
+        <section className="queue-section">
+          <div className="queue-section-heading">
+            <span>ЭСКАЛИРОВАННЫЕ</span><b>{unassignedQueue.length}</b>
+          </div>
+          {loading ? <p className="muted">Загружаем очередь…</p> : (
+            unassignedQueue.map((item) => <ConversationCard item={item} key={item.id} />)
+          )}
+          {!loading && !unassignedQueue.length && <p className="muted queue-empty">Нет новых эскалаций.</p>}
+        </section>
+
+        <section className="queue-section">
+          <div className="queue-section-heading">
+            <span>МОИ ДИАЛОГИ</span><b>{own.length}</b>
+          </div>
+          {own.map((item) => <ConversationCard item={item} key={item.id} />)}
+          {!own.length && <p className="muted queue-empty">Назначенных диалогов нет.</p>}
+        </section>
+      </section>
+
+      <section className="operator-chat">
+        {active ? (
+          <>
+            <div className="operator-actions">
+              <div>
+                <span>Диалог #{active.id}</span>
+                <small>{statusLabels[active.status] || active.status}</small>
+              </div>
+              <div className="action-group">
+                {canAssign && (
+                  <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => action('assign', api.assign)}>
+                    {busy === 'assign' ? 'Назначаем…' : 'Взять в работу'}
+                  </button>
+                )}
+                {canReturn && (
+                  <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => action('backToAi', api.backToAi)}>
+                    {busy === 'backToAi' ? 'Возвращаем…' : 'Вернуть AI'}
+                  </button>
+                )}
+                {canClose && (
+                  <button type="button" className="danger" disabled={Boolean(busy)} onClick={() => action('close', api.close)}>
+                    {busy === 'close' ? 'Закрываем…' : 'Закрыть'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <ChatPanel
+              conversation={active}
+              messages={messages}
+              userId={user.id}
+              isLoading={false}
+              isSending={busy === 'reply'}
+              isAiGenerating={false}
+              onSend={reply}
+              readOnly={!canReply}
+              autoFocusComposer={canReply && !busy}
+            />
+          </>
+        ) : (
+          <div className="empty-state">
+            <div>◉</div>
+            <h2>Рабочее место</h2>
+            <p>Слева — только новые эскалации и ваши диалоги.</p>
+          </div>
+        )}
+      </section>
+    </main>
+  );
 }
