@@ -21,18 +21,13 @@ STATE_GRAPH = {
     Status.PENDING_AI: [Status.OPEN, Status.ESCALATED, Status.CLOSED],
     Status.ESCALATED: [Status.WAITING_FOR_OPERATOR, Status.CLOSED],
     Status.WAITING_FOR_OPERATOR: [Status.WAITING_FOR_USER, Status.OPEN, Status.CLOSED],
-    Status.WAITING_FOR_USER: [Status.WAITING_FOR_OPERATOR, Status.PENDING_AI, Status.CLOSED],
+    Status.WAITING_FOR_USER: [Status.WAITING_FOR_OPERATOR, Status.OPEN, Status.PENDING_AI, Status.CLOSED],
     Status.CLOSED: [],
 }
 
 
 class ConversationStateMachine:
-    """Own conversation status transitions and persist their results.
-
-    This is intentionally the only persistence boundary allowed to mutate
-    conversation status. It is created by UnitOfWork and uses the UnitOfWork
-    session, so transitions participate in the same transaction.
-    """
+    """Own conversation status transitions and persist their results."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -229,7 +224,9 @@ class ConversationStateMachine:
         if conversation is None:
             return None
 
-        if conversation.status != Status.WAITING_FOR_OPERATOR or conversation.operator_id is None:
+        if conversation.status not in (Status.WAITING_FOR_OPERATOR, Status.WAITING_FOR_USER):
+            return None
+        if conversation.operator_id is None:
             return None
 
         last_message = (
