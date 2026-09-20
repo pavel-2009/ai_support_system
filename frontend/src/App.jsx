@@ -205,9 +205,8 @@ function SupportApp({ api, accessToken, logout }) {
         }
       };
 
-      await poll();
-      if (!pollRef.current && isSending) return;
       pollRef.current = window.setInterval(poll, 600);
+      await poll();
     } catch (requestError) {
       setError(requestError.message);
       stopMessagePolling();
