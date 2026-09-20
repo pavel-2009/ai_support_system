@@ -10,7 +10,7 @@ export function LoginForm({ onSubmit }) {
     event.preventDefault();
     setError('');
     setIsSubmitting(true);
-    try { await onSubmit(email, password); } catch (requestError) { setError(requestError.message); } finally { setIsSubmitting(false); }
+    try { await onSubmit(email.trim(), password); } catch (requestError) { setError(requestError.message); } finally { setIsSubmitting(false); }
   }
 
   return <main className="login-page"><form className="login-card" onSubmit={submit}>
@@ -19,7 +19,7 @@ export function LoginForm({ onSubmit }) {
     <label>Почта<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.ru" required /></label>
     <label>Пароль<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required /></label>
     {error && <p className="form-error" role="alert">{error}</p>}
-    <button className="primary wide" disabled={isSubmitting}>{isSubmitting ? 'Входим…' : 'Войти'}</button>
+    <button type="submit" className="primary wide" disabled={isSubmitting}>{isSubmitting ? 'Входим…' : 'Войти'}</button>
     <p className="login-tip">Набор функций определяется ролью учётной записи.</p>
   </form></main>;
 }
