@@ -15,6 +15,7 @@ from app.core.dependencies import (
     require_authenticated_user,
 )
 from app.core.idempotency import IdempotencyKey
+from app.core.logging import get_logger
 from app.core.rate_limit import get_user_identifier, limiter
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -23,6 +24,7 @@ from app.schemas.message import MessageCreate, MessageGet
 from app.services.message_service import MessageService
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
+logger = get_logger(__name__)
 
 
 def make_idempotency_key(user_id: int, conversation_id: int, key: str) -> str:
@@ -108,8 +110,7 @@ async def send_message(
         process_llm_task.delay(conversation_id=conversation.id)
     except Exception:
         # Enqueue failures are operationally important and should still be visible.
-        from app.core.logging import get_logger
-        get_logger(__name__).exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
+        logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
 
     return response
 
