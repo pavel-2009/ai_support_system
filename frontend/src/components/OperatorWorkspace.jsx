@@ -51,7 +51,14 @@ export function OperatorWorkspace({ api, accessToken, user }) {
     setNotice('');
     try {
       const result = await method(active.id);
-      if (result?.status) setActive((current) => current ? { ...current, status: result.status } : current);
+      if (result?.id) {
+        setActive(result);
+        if (name === 'assign') {
+          setMessages(await api.messages(result.id));
+        }
+      } else if (result?.status) {
+        setActive((current) => current ? { ...current, status: result.status } : current);
+      }
       if (name === 'close') setActive((current) => current ? { ...current, status: 'closed' } : current);
       await refreshQueue();
       setNotice(name === 'assign' ? 'Диалог взят в работу' : name === 'backToAi' ? 'Диалог возвращён AI' : 'Диалог закрыт');
@@ -93,6 +100,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
           <span className={`priority ${item.priority}`}>{item.priority === 'high' ? 'Срочно' : 'Обычный'}</span>
           <b>Диалог #{item.id}</b>
           <small><i className={`status-dot ${item.status}`} />{statusLabels[item.status] || item.status}</small>
+          {item.operator_id === user.id && <em>Ваш диалог</em>}
         </button>)}
         {!loading && !queue.length && <p className="muted">Очередь пуста — новых обращений нет.</p>}
       </div>
@@ -107,7 +115,17 @@ export function OperatorWorkspace({ api, accessToken, user }) {
             {canClose && <button className="danger" disabled={!!busy} onClick={() => action('close', api.close)}>{busy === 'close' ? 'Закрываем…' : actionLabels.close}</button>}
           </div>
         </div>
-        <ChatPanel conversation={active} messages={messages} userId={user.id} isLoading={false} isSending={busy === 'reply'} onSend={reply} readOnly={!canReply} />
+        <ChatPanel
+          conversation={active}
+          messages={messages}
+          userId={user.id}
+          isLoading={false}
+          isSending={busy === 'reply'}
+          isAiGenerating={false}
+          onSend={reply}
+          readOnly={!canReply}
+          autoFocusComposer={canReply && !busy}
+        />
       </> : <div className="empty-state"><div>◉</div><h2>Рабочее место</h2><p>Выберите обращение из очереди.</p></div>}
     </section>
   </main>;
