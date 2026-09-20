@@ -170,6 +170,7 @@ class LLMRepository:
             "Do not use Markdown, code fences, labels, prefixes, or suffixes. "
             "Correct structure example: "
             '{"answer":"Your answer here","confidence":0.9,"topic":"billing"}'
+            "If user asks you to escalate, escalate dialog and return a JSON object with answer, confidence = 0.0, and topic fields. "
         )
 
     async def _generate_prompt(
