@@ -162,7 +162,7 @@ function SupportApp({ api, accessToken, logout }) {
   }
 
   async function sendMessage(content) {
-    if (!selected || isSending || isAiGenerating || selected.status !== 'open') return;
+    if (!selected || isSending || isAiGenerating || !['open', 'waiting_for_user'].includes(selected.status)) return;
 
     setIsSending(true);
     setIsAiGenerating(false);
