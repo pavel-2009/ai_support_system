@@ -3,6 +3,7 @@
 from app.core.logging import get_logger
 from app.core.uow import UnitOfWork
 from app.domain.events import ConversationMarkedForReview, MessageSent
+from app.models.user import UserRole
 
 
 logger = get_logger(__name__)
@@ -42,6 +43,20 @@ class MessageService:
                 sender_id,
             )
             return None
+
+        if sender_type == UserRole.OPERATOR.value and sender_id is not None:
+            updated_conversation = await self.uow.state_machine.operator_replied(
+                conversation_id,
+                sender_id,
+            )
+            if updated_conversation is None:
+                logger.warning(
+                    "MESSAGE SERVICE OPERATOR REPLY STATE UPDATE REJECTED: "
+                    "conversation_id=%s operator_id=%s",
+                    conversation_id,
+                    sender_id,
+                )
+                return None
 
         if needs_review:
             updated_conversation = await self.uow.state_machine.mark_for_review(conversation_id)
