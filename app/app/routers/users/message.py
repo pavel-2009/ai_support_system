@@ -15,7 +15,6 @@ from app.core.dependencies import (
     require_authenticated_user,
 )
 from app.core.idempotency import IdempotencyKey
-from app.core.logging import get_logger
 from app.core.rate_limit import get_user_identifier, limiter
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -24,7 +23,6 @@ from app.schemas.message import MessageCreate, MessageGet
 from app.services.message_service import MessageService
 
 router = APIRouter(prefix="/conversations", tags=["messages"])
-logger = get_logger(__name__)
 
 
 def make_idempotency_key(user_id: int, conversation_id: int, key: str) -> str:
@@ -106,21 +104,12 @@ async def send_message(
             idempotency.delete(storage_key)
         raise
 
-    logger.info(
-        "HTTP SEND MESSAGE PERSISTED: message_id=%s conversation=%s",
-        new_message.id,
-        conversation.id,
-    )
-
     try:
-        task = process_llm_task.delay(conversation_id=conversation.id)
-        logger.info(
-            "CELERY ENQUEUED: task_id=%s conversation_id=%s",
-            task.id,
-            conversation.id,
-        )
+        process_llm_task.delay(conversation_id=conversation.id)
     except Exception:
-        logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
+        # Enqueue failures are operationally important and should still be visible.
+        from app.core.logging import get_logger
+        get_logger(__name__).exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
 
     return response
 
@@ -136,7 +125,4 @@ async def get_messages(
     message_service: MessageService = Depends(get_message_service),
 ) -> list[MessageGet]:
     """Получить все сообщения в беседе."""
-    logger.info("HTTP GET MESSAGES: user=%s conversation=%s", current_user.id, conversation.id)
-    messages = await message_service.get_messages_by_conversation(conversation.id)
-    logger.info("HTTP GET MESSAGES OK: user=%s conversation=%s count=%s", current_user.id, conversation.id, len(messages))
-    return messages
+    return await message_service.get_messages_by_conversation(conversation.id)
