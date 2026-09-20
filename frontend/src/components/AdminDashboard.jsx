@@ -7,22 +7,44 @@ export function AdminDashboard({ api, conversations, onConversationsChange }) {
   const [busy, setBusy] = useState('');
   const [selectedId, setSelectedId] = useState(null);
 
-  useEffect(() => { api.users().then(setUsers).catch((requestError) => setError(requestError.message)); }, [api]);
+  useEffect(() => {
+    api.users().then(setUsers).catch((requestError) => setError(requestError.message));
+    const interval = window.setInterval(() => {
+      onConversationsChange().catch(() => {});
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [api, onConversationsChange]);
+
   const selected = useMemo(() => conversations.find((item) => item.id === selectedId), [conversations, selectedId]);
   const open = conversations.filter((item) => item.status !== 'closed');
   const escalated = conversations.filter((item) => item.status === 'escalated');
-  const avgConfidence = conversations.length ? Math.round(conversations.reduce((sum, item) => sum + (item.ai_confidence || 0), 0) / conversations.length * 100) : 0;
-  const averageWait = open.length ? Math.round(open.reduce((sum, item) => sum + (Date.now() - new Date(item.created_at)), 0) / open.length / 60000) : 0;
-  const metrics = [['Активные обращения', open.length, 'сейчас'], ['Эскалации', escalated.length, 'нуждаются в операторе'], ['Среднее ожидание', `${averageWait} мин`, 'по открытым обращениям'], ['Операторы', users.filter((item) => item.role === 'operator').length, 'в системе']];
+  const waitingForOperator = conversations.filter((item) => ['escalated', 'waiting_for_operator'].includes(item.status));
+  const confidenceValues = conversations
+    .map((item) => item.ai_confidence)
+    .filter((value) => typeof value === 'number');
+  const avgConfidence = confidenceValues.length
+    ? Math.round(confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length * 100)
+    : 0;
+  const averageWait = waitingForOperator.length
+    ? Math.round(waitingForOperator.reduce((sum, item) => sum + Math.max(0, Date.now() - new Date(item.updated_at).getTime()), 0) / waitingForOperator.length / 60000)
+    : 0;
+  const metrics = [
+    ['Активные обращения', open.length, 'не закрыты'],
+    ['Эскалации', escalated.length, 'без назначения оператора'],
+    ['Среднее ожидание', `${averageWait} мин`, 'только очередь оператора'],
+    ['Средняя уверенность AI', `${avgConfidence}%`, confidenceValues.length ? `по ${confidenceValues.length} диалогам` : 'нет данных'],
+  ];
 
   async function runAction(name, method) {
     if (!selected || busy) return;
     setBusy(name);
     setError('');
     try {
-      await method(selected.id);
+      const result = await method(selected.id);
+      if (result?.id) {
+        setSelectedId(result.id);
+      }
       await onConversationsChange();
-      setError('');
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -40,7 +62,7 @@ export function AdminDashboard({ api, conversations, onConversationsChange }) {
           <span><i className={`status-dot ${status}`} />{label}</span><div><i style={{ width: `${conversations.length ? count / conversations.length * 100 : 0}%` }} /></div><b>{count}</b>
         </div>; })}
       </article>
-      <article className="panel"><h3>Контроль AI</h3><div className="quality"><strong>{avgConfidence}%</strong><span>средняя уверенность AI</span></div><p className="muted">Следите за эскалациями и диалогами, которые долго остаются без ответа.</p></article>
+      <article className="panel"><h3>Контроль AI</h3><div className="quality"><strong>{avgConfidence}%</strong><span>средняя уверенность AI</span></div><p className="muted">Учитываются только диалоги, где AI действительно вернул значение confidence.</p></article>
     </section>
     <section className="panel conversation-panel">
       <div className="panel-heading"><div><h3>Диалоги</h3><p className="muted">Выберите обращение для управления состоянием.</p></div><span className="count-badge">{conversations.length}</span></div>
