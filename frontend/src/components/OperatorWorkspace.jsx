@@ -107,7 +107,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
             {canClose && <button className="danger" disabled={!!busy} onClick={() => action('close', api.close)}>{busy === 'close' ? 'Закрываем…' : actionLabels.close}</button>}
           </div>
         </div>
-        <ChatPanel conversation={active} messages={messages} userId={user.id} isLoading={false} isSending={busy === 'reply'} onSend={reply} />
+        <ChatPanel conversation={active} messages={messages} userId={user.id} isLoading={false} isSending={busy === 'reply'} onSend={reply} readOnly={!canReply} />
       </> : <div className="empty-state"><div>◉</div><h2>Рабочее место</h2><p>Выберите обращение из очереди.</p></div>}
     </section>
   </main>;
