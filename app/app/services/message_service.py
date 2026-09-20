@@ -58,6 +58,18 @@ class MessageService:
                 )
                 return None
 
+        if sender_type == UserRole.USER.value:
+            updated_conversation = await self.uow.state_machine.user_replied(conversation_id)
+            if updated_conversation is None:
+                logger.warning("MESSAGE SERVICE USER REPLY STATE UPDATE REJECTED: conversation_id=%s", conversation_id)
+                return None
+
+        if sender_type == "ai" and not needs_review:
+            updated_conversation = await self.uow.state_machine.ai_replied(conversation_id)
+            if updated_conversation is None:
+                logger.info("AI RESPONSE STATE UPDATE SKIPPED: conversation_id=%s", conversation_id)
+                return None
+
         if needs_review:
             updated_conversation = await self.uow.state_machine.mark_for_review(conversation_id)
             if updated_conversation is not None:
@@ -65,12 +77,6 @@ class MessageService:
 
         self.uow.add_event(MessageSent(str(new_message.id), str(conversation_id)))
 
-        logger.debug(
-            "MESSAGE SERVICE CREATE OK: id=%s conversation_id=%s sender_type=%s",
-            new_message.id,
-            conversation_id,
-            sender_type,
-        )
         return new_message
 
     async def get_messages_by_conversation(self, conversation_id: int):

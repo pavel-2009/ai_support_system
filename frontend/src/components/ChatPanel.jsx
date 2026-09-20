@@ -65,16 +65,20 @@ export function ChatPanel({
   autoFocusComposer = false,
 }) {
   const lastMessageRef = useRef(null);
+  const lastMessageIdRef = useRef(null);
 
   useEffect(() => {
-    if (!messages.length && !isSending && !isAiGenerating) return;
-    lastMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, isSending, isAiGenerating]);
+    const lastMessageId = messages.at(-1)?.id;
+    if (!lastMessageId || lastMessageId === lastMessageIdRef.current) return;
+    const behavior = lastMessageIdRef.current ? 'smooth' : 'auto';
+    lastMessageIdRef.current = lastMessageId;
+    lastMessageRef.current?.scrollIntoView({ behavior, block: 'end' });
+  }, [messages]);
 
   if (!conversation) return <section className="empty-state"><div>✦</div><h2>Выберите диалог</h2><p>История обращения появится здесь.</p></section>;
 
   const status = statusLabels[conversation.status] || conversation.status;
-  const disabled = readOnly || isSending || isAiGenerating || conversation.status === 'closed';
+  const disabled = readOnly || isSending || isAiGenerating || ['closed', 'escalated', 'waiting_for_operator', 'pending_ai'].includes(conversation.status);
 
   return <section className="chat">
     <header className="chat-header">
