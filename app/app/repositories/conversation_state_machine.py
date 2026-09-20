@@ -174,6 +174,26 @@ class ConversationStateMachine:
         await self.session.refresh(conversation)
         return conversation
 
+    async def operator_replied(self, conversation_id: int, operator_id: int) -> Conversation | None:
+        """Move an assigned conversation to waiting for the user after a reply."""
+        conversation = await self._get_conversation(conversation_id)
+        if conversation is None or conversation.operator_id != operator_id:
+            return None
+
+        previous_status = await self._transition(conversation, Status.WAITING_FOR_USER)
+        if previous_status is None:
+            return None
+
+        await self._create_audit_log(
+            conversation_id=conversation.id,
+            actor_id=operator_id,
+            action="operator_replied",
+            from_status=previous_status,
+            to_status=Status.WAITING_FOR_USER,
+        )
+        await self.session.refresh(conversation)
+        return conversation
+
     async def close(self, conversation_id: int) -> Conversation | None:
         """Close a conversation and release its active operator slot."""
         conversation = await self._get_conversation(conversation_id)
