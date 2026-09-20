@@ -29,11 +29,6 @@ class MessageRepository:
         needs_review: bool = False,
     ) -> Message | None:
         """Создать новое сообщение."""
-        logger.info(
-            "DB CREATE message: conversation_id=%s sender_type=%s sender_id=%s auto=%s review=%s",
-            conversation_id, sender_type, sender_id, is_auto_reply, needs_review,
-        )
-
         conversation = (
             await self.session.execute(
                 select(Conversation).where(Conversation.id == conversation_id)
@@ -63,17 +58,13 @@ class MessageRepository:
         self.session.add(new_message)
         await self.session.flush()
         await self.session.refresh(new_message)
-        logger.info("DB CREATE message successful: id=%s conversation_id=%s", new_message.id, conversation_id)
         return new_message
 
     async def get_messages_by_conversation(self, conversation_id: int) -> list[Message]:
         """Получить все сообщения для заданного conversation_id."""
-        logger.info("DB SELECT messages: conversation_id=%s", conversation_id)
         result = await self.session.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at.asc(), Message.id.asc())
         )
-        messages = result.scalars().all()
-        logger.info("DB SELECT messages successful: conversation_id=%s count=%s", conversation_id, len(messages))
-        return messages
+        return result.scalars().all()

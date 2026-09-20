@@ -22,6 +22,7 @@ function SupportApp({ api, accessToken, logout }) {
   const [mode, setMode] = useState('chat');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
   const selected = useMemo(() => conversations.find((item) => item.id === selectedId), [conversations, selectedId]);
@@ -33,6 +34,7 @@ function SupportApp({ api, accessToken, logout }) {
     setSelectedId((current) => keepSelection && response.items.some((item) => item.id === current)
       ? current
       : response.items[0]?.id || null);
+    return response.items;
   }, [api]);
 
   useEffect(() => {
@@ -81,33 +83,49 @@ function SupportApp({ api, accessToken, logout }) {
   }
 
   async function sendMessage(content) {
-    if (!selected || isSending || selected.status === 'closed') return;
+    if (!selected || isSending || isAiGenerating || selected.status === 'closed') return;
     setIsSending(true);
+    setIsAiGenerating(true);
     setError('');
     try {
       const message = await api.sendMessage(selected.id, content);
       setMessages((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
-      await loadConversations(true);
+
+      let latestMessages = [message];
       const startedAt = Date.now();
       pollRef.current = window.setInterval(async () => {
         try {
-          const [nextMessages] = await Promise.all([api.messages(selected.id), loadConversations(true)]);
+          const [nextMessages, nextConversations] = await Promise.all([
+            api.messages(selected.id),
+            loadConversations(true),
+          ]);
+          const previousMessages = latestMessages;
+          latestMessages = nextMessages;
           setMessages(nextMessages);
-          const hasNewAiReply = nextMessages.some((item) => item.sender_type === 'ai' && !messages.some((old) => old.id === item.id));
-          if (hasNewAiReply || Date.now() - startedAt >= 30000) {
+
+          const currentConversation = nextConversations.find((item) => item.id === selected.id);
+          const terminalStatus = ['escalated', 'waiting_for_operator', 'waiting_for_user', 'closed'].includes(currentConversation?.status);
+          const hasNewAiReply = nextMessages.some(
+            (item) => item.sender_type === 'ai' && !previousMessages.some((old) => old.id === item.id),
+          );
+
+          if (terminalStatus || hasNewAiReply || Date.now() - startedAt >= 30000) {
             window.clearInterval(pollRef.current);
             pollRef.current = null;
             setIsSending(false);
+            setIsAiGenerating(false);
           }
         } catch {
           window.clearInterval(pollRef.current);
           pollRef.current = null;
           setIsSending(false);
+          setIsAiGenerating(false);
         }
-      }, 1500);
+      }, 1000);
     } catch (requestError) {
       setError(requestError.message);
       setIsSending(false);
+      setIsAiGenerating(false);
     }
   }
 
@@ -120,16 +138,16 @@ function SupportApp({ api, accessToken, logout }) {
 
   return <div className="app-shell">
     <div className="sidebar-wrap">
-      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMode('chat'); }} onCreate={createConversation} isCreating={isCreating} />
+      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMode('chat'); setIsSending(false); setIsAiGenerating(false); }} onCreate={createConversation} isCreating={isCreating} />
       <Profile user={user} mode={mode} onModeChange={setMode} onLogout={logout} />
     </div>
     <section className="workspace">
       {error && <button className="workspace-error" role="alert" onClick={() => setError('')}>{error}<span>×</span></button>}
       {mode === 'admin' && user.role === 'admin'
-        ? <AdminDashboard api={api} conversations={conversations} onConversationsChange={loadConversations} />
+        ? <AdminDashboard api={api} conversations={conversations} user={user} onConversationsChange={loadConversations} />
         : mode === 'operator' && user.role !== 'user'
           ? <OperatorWorkspace api={api} accessToken={accessToken} user={user} />
-          : <ChatPanel conversation={selected} messages={messages} userId={user.id} isLoading={false} isSending={isSending} onSend={sendMessage} />}
+          : <ChatPanel conversation={selected} messages={messages} userId={user.id} isLoading={false} isSending={isSending} isAiGenerating={isAiGenerating} onSend={sendMessage} />}
     </section>
   </div>;
 }
