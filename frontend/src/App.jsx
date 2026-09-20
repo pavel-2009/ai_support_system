@@ -144,7 +144,7 @@ function SupportApp({ api, accessToken, logout }) {
     <section className="workspace">
       {error && <button className="workspace-error" role="alert" onClick={() => setError('')}>{error}<span>×</span></button>}
       {mode === 'admin' && user.role === 'admin'
-        ? <AdminDashboard api={api} conversations={conversations} onConversationsChange={loadConversations} />
+        ? <AdminDashboard api={api} conversations={conversations} user={user} onConversationsChange={loadConversations} />
         : mode === 'operator' && user.role !== 'user'
           ? <OperatorWorkspace api={api} accessToken={accessToken} user={user} />
           : <ChatPanel conversation={selected} messages={messages} userId={user.id} isLoading={false} isSending={isSending} isAiGenerating={isAiGenerating} onSend={sendMessage} />}
