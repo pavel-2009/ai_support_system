@@ -139,7 +139,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   );
 
   const own = useMemo(
-    () => mine.filter((item) => item.operator_id === user.id),
+    () => mine.filter((item) => item.operator_id === user.id && item.status !== 'closed'),
     [mine, user.id],
   );
 
