@@ -99,13 +99,14 @@ function SupportApp({ api, accessToken, logout }) {
             api.messages(selected.id),
             loadConversations(true),
           ]);
+          const previousMessages = latestMessages;
           latestMessages = nextMessages;
           setMessages(nextMessages);
 
           const currentConversation = nextConversations.find((item) => item.id === selected.id);
           const terminalStatus = ['escalated', 'waiting_for_operator', 'waiting_for_user', 'closed'].includes(currentConversation?.status);
           const hasNewAiReply = nextMessages.some(
-            (item) => item.sender_type === 'ai' && !latestMessages.slice(0, -1).some((old) => old.id === item.id),
+            (item) => item.sender_type === 'ai' && !previousMessages.some((old) => old.id === item.id),
           );
 
           if (terminalStatus || hasNewAiReply || Date.now() - startedAt >= 30000) {
@@ -137,7 +138,7 @@ function SupportApp({ api, accessToken, logout }) {
 
   return <div className="app-shell">
     <div className="sidebar-wrap">
-      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMode('chat'); }} onCreate={createConversation} isCreating={isCreating} />
+      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMode('chat'); setIsSending(false); setIsAiGenerating(false); }} onCreate={createConversation} isCreating={isCreating} />
       <Profile user={user} mode={mode} onModeChange={setMode} onLogout={logout} />
     </div>
     <section className="workspace">
