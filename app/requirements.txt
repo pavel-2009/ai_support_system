@@ -6,10 +6,11 @@ slowapi==0.1.10
 pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
-email-validator==2.3.0
+email-validator==2.3.0
+
 
 # === Uvicorn ===
-uvicorn==0.44.0
+uvicorn[standard]==0.44.0
 
 # === SQLAlchemy and Alembic ===
 SQLAlchemy==2.0.49

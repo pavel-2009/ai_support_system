@@ -170,14 +170,19 @@ class ConversationStateMachine:
         return conversation
 
     async def operator_replied(self, conversation_id: int, operator_id: int) -> Conversation | None:
-        """Move an assigned conversation to waiting for the user after a reply."""
+        """Record an operator reply while keeping the conversation assigned."""
         conversation = await self._get_conversation(conversation_id)
         if conversation is None or conversation.operator_id != operator_id:
             return None
 
-        previous_status = await self._transition(conversation, Status.WAITING_FOR_USER)
-        if previous_status is None:
+        if conversation.status not in (Status.WAITING_FOR_OPERATOR, Status.WAITING_FOR_USER):
             return None
+
+        previous_status = conversation.status
+        if conversation.status == Status.WAITING_FOR_OPERATOR:
+            previous_status = await self._transition(conversation, Status.WAITING_FOR_USER)
+            if previous_status is None:
+                return None
 
         await self._create_audit_log(
             conversation_id=conversation.id,

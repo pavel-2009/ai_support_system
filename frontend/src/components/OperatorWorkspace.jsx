@@ -116,7 +116,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   }
 
   async function reply(content) {
-    if (!active || busy || active.operator_id !== user.id || active.status !== 'waiting_for_operator') return;
+    if (!active || busy || active.operator_id !== user.id || active.status === 'closed') return;
 
     setBusy('reply');
     setNotice('');
@@ -144,8 +144,8 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   );
 
   const canAssign = active?.status === 'escalated' && !active.operator_id;
-  const canReply = active?.operator_id === user.id && active?.status === 'waiting_for_operator';
-  const canReturn = active?.operator_id === user.id && ['waiting_for_operator', 'waiting_for_user'].includes(active.status);
+  const canReply = active?.operator_id === user.id && active?.status !== 'closed';
+  const canReturn = active?.operator_id === user.id && active.status === 'waiting_for_user';
   const canClose = active?.operator_id === user.id && active.status !== 'closed';
 
   const ConversationCard = ({ item }) => (
@@ -234,6 +234,7 @@ export function OperatorWorkspace({ api, accessToken, user }) {
               isAiGenerating={false}
               onSend={reply}
               readOnly={!canReply}
+              operatorMode
               autoFocusComposer={canReply && !busy}
             />
           </>

@@ -111,6 +111,7 @@ export function ChatPanel({
   isAiGenerating = false,
   onSend,
   readOnly = false,
+  operatorMode = false,
   autoFocusComposer = false,
 }) {
   const lastMessageRef = useRef(null);
@@ -152,7 +153,7 @@ export function ChatPanel({
     readOnly ||
     isSending ||
     showAiTyping ||
-    userBlockedStatuses.has(conversation.status);
+    (!operatorMode && userBlockedStatuses.has(conversation.status));
 
   return (
     <section className="chat">
