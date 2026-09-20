@@ -35,7 +35,7 @@ export function AdminDashboard({ api, conversations, user, onConversationsChange
   );
 
   const own = useMemo(
-    () => sortByUpdated(conversations.filter((item) => item.operator_id === user.id)),
+    () => sortByUpdated(conversations.filter((item) => item.operator_id === user.id && item.status !== 'closed')),
     [conversations, user.id],
   );
 
