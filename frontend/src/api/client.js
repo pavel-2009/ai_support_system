@@ -33,10 +33,19 @@ export function createApiClient({ getAccessToken, onUnauthorized }) {
   return {
     login: (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     currentUser: () => request('/users/me'),
-    conversations: () => request('/conversations/?size=100'),
+    conversations: ({ operatorId, status } = {}) => {
+      const params = new URLSearchParams({ size: '100' });
+      if (operatorId != null) params.set('operator_id', String(operatorId));
+      if (status) params.set('status', status);
+      return request(`/conversations/?${params.toString()}`);
+    },
     createConversation: () => request('/conversations/', { method: 'POST', body: JSON.stringify({ priority: 'medium', channel: 'web' }) }),
     messages: (conversationId) => request(`/conversations/${conversationId}/messages`),
-    sendMessage: (conversationId, content) => request(`/conversations/${conversationId}/messages`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ content }) }),
+    sendMessage: (conversationId, content) => request(`/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({ content }),
+    }),
     queue: () => request('/operator/queue'),
     assign: (conversationId) => request(`/operator/assign/${conversationId}`, { method: 'POST' }),
     operatorReply: (conversationId, message) => request(`/operator/reply/${conversationId}`, { method: 'POST', body: JSON.stringify({ message }) }),
