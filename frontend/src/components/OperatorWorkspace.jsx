@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { statusLabels } from './ConversationList';
 import { useOperatorSocket } from '../hooks/useOperatorSocket';
@@ -16,6 +16,11 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const activeRef = useRef(null);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   const refreshQueue = useCallback(async () => {
     try { setQueue(await api.queue()); }
@@ -40,10 +45,11 @@ export function OperatorWorkspace({ api, accessToken, user }) {
   const connected = useOperatorSocket(accessToken, useCallback((event) => {
     if (event.type === 'typing') return;
     refreshQueue();
-    if (active && String(event.conversation_id) === String(active.id)) {
-      api.messages(active.id).then(setMessages).catch(() => {});
+    const current = activeRef.current;
+    if (current && String(event.conversation_id) === String(current.id)) {
+      api.messages(current.id).then(setMessages).catch(() => {});
     }
-  }, [active, api, refreshQueue]));
+  }, [api, refreshQueue]));
 
   async function action(name, method) {
     if (!active || busy) return;
