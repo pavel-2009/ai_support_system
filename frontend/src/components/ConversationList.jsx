@@ -26,6 +26,8 @@ export function ConversationList({
   showCreate = true,
   title = 'ДИАЛОГИ',
 }) {
+  const visibleConversations = conversations.filter((conversation) => conversation.status !== 'closed');
+
   return (
     <aside className="sidebar">
       <div className="logo"><span>✦</span> assist<span className="logo-dot">.</span></div>
@@ -38,11 +40,11 @@ export function ConversationList({
 
       <div className="section-title">
         <span>{title}</span>
-        <b>{conversations.length}</b>
+        <b>{visibleConversations.length}</b>
       </div>
 
       <nav className="conversation-list" aria-label={title}>
-        {conversations.map((conversation) => (
+        {visibleConversations.map((conversation) => (
           <button
             key={conversation.id}
             type="button"
@@ -57,7 +59,7 @@ export function ConversationList({
             <time>{time(conversation.updated_at)}</time>
           </button>
         ))}
-        {!conversations.length && <p className="sidebar-empty">Диалогов пока нет.</p>}
+        {!visibleConversations.length && <p className="sidebar-empty">Активных диалогов пока нет.</p>}
       </nav>
     </aside>
   );
