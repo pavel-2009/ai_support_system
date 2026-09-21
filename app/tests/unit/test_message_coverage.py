@@ -1,6 +1,5 @@
 """Дополнительное покрытие message service, message router/repository и state machine."""
 
-from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -20,7 +19,7 @@ from app.models.user import User, UserRole
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.conversation_state_machine import ConversationStateMachine
 from app.repositories.message_repo import MessageRepository
-from app.schemas.message import MessageGet
+from app.domain.events import MessageSent
 
 
 async def _user(session, role=UserRole.USER):
@@ -297,9 +296,7 @@ class TestMessageServiceCoverage:
 
         assert result.id == 14
         assert uow.add_event.call_count == 1
-        assert isinstance(uow.add_event.call_args.args[0], __import__(
-            "app.domain.events", fromlist=["MessageSent"]
-        ).MessageSent)
+        assert isinstance(uow.add_event.call_args.args[0], MessageSent)
 
     @pytest.mark.asyncio
     async def test_get_messages_by_conversation_delegates(self):
@@ -708,6 +705,66 @@ class TestMessageRouterIdempotencyCoverage:
         assert response.status_code == 409
         assert "уже выполняется" in response.json()["detail"]
 
+    def test_reserve_race_returns_completed_response(self, client, create_test_user, monkeypatch):
+        fake = self._install_fake_idempotency(monkeypatch)
+        email = f"idempotent_race_{uuid4().hex[:8]}@example.com"
+        create_test_user(email=email, nickname=f"idempotent_race_{uuid4().hex[:8]}")
+        headers = self._headers(client, email)
+
+        conversation = client.post(
+            "/api/conversations/",
+            headers=headers,
+            json={"priority": "low", "channel": "api"},
+        )
+        conversation_id = conversation.json()["id"]
+
+        from app.routers.users.message import make_fingerprint, make_idempotency_key
+        from app.schemas.message import MessageCreate
+
+        message = MessageCreate(content="гонка")
+        key = make_idempotency_key(
+            int(conversation.json()["user_id"]),
+            conversation_id,
+            "race-key",
+        )
+        fake.store[key] = {
+            "fingerprint": make_fingerprint(message),
+            "status": "completed",
+            "response": {
+                "id": 777,
+                "conversation_id": conversation_id,
+                "sender_type": "user",
+                "sender_id": int(conversation.json()["user_id"]),
+                "content": "гонка",
+                "is_auto_reply": False,
+                "confidence": None,
+                "needs_review": False,
+                "created_at": "2026-09-21T00:00:00",
+            },
+        }
+
+        original_get = fake.get
+        first_get = True
+
+        def get_after_race(key_to_read):
+            nonlocal first_get
+            if first_get:
+                first_get = False
+                return None
+            return original_get(key_to_read)
+
+        fake.get = get_after_race
+        fake.reserve = lambda _key, _fingerprint: False
+
+        response = client.post(
+            f"/api/conversations/{conversation_id}/messages",
+            headers={**headers, "Idempotency-Key": "race-key"},
+            json={"content": "гонка"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["id"] == 777
+
     def test_message_service_failure_clears_idempotency_key(
         self, client, create_test_user, monkeypatch
     ):
@@ -727,11 +784,11 @@ class TestMessageRouterIdempotencyCoverage:
             "app.routers.users.message.MessageService.create_message",
             new=AsyncMock(side_effect=RuntimeError("service failed")),
         ):
-            response = client.post(
-                f"/api/conversations/{conversation_id}/messages",
-                headers={**headers, "Idempotency-Key": "error-key"},
-                json={"content": "сломаться"},
-            )
+            with pytest.raises(RuntimeError, match="service failed"):
+                client.post(
+                    f"/api/conversations/{conversation_id}/messages",
+                    headers={**headers, "Idempotency-Key": "error-key"},
+                    json={"content": "сломаться"},
+                )
 
-        assert response.status_code == 500
         assert fake.store == {}
