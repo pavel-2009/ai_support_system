@@ -13,6 +13,7 @@ from app.celery.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import limiter
+from app.core.telemetry import configure_telemetry
 from app.db import get_async_session
 import app.services.event_handlers  # noqa: F401
 from app.routers.users.conversation import router as conversation_router
@@ -28,6 +29,8 @@ except Exception:  # pragma: no cover
 
     def generate_latest() -> bytes:
         return b"# Prometheus client unavailable\n"
+
+configure_telemetry()
 
 configure_logging()
 logger = get_logger(__name__)
