@@ -569,14 +569,21 @@ class TestMessageRouterIdempotencyCoverage:
 
         class FakeIdempotency:
             store = {}
+            force_first_get_miss = False
+            force_reserve_false = False
 
             def __init__(self, _redis):
                 pass
 
             def get(self, key):
+                if self.force_first_get_miss:
+                    self.force_first_get_miss = False
+                    return None
                 return self.store.get(key)
 
             def reserve(self, key, fingerprint):
+                if self.force_reserve_false:
+                    return False
                 if key in self.store:
                     return False
                 self.store[key] = {
@@ -596,6 +603,8 @@ class TestMessageRouterIdempotencyCoverage:
                 self.store.pop(key, None)
 
         FakeIdempotency.store = {}
+        FakeIdempotency.force_first_get_miss = False
+        FakeIdempotency.force_reserve_false = False
         monkeypatch.setattr(message_router, "IdempotencyKey", FakeIdempotency)
         return FakeIdempotency
 
@@ -743,18 +752,8 @@ class TestMessageRouterIdempotencyCoverage:
             },
         }
 
-        original_get = fake.get
-        first_get = True
-
-        def get_after_race(_self, key_to_read):
-            nonlocal first_get
-            if first_get:
-                first_get = False
-                return None
-            return original_get(key_to_read)
-
-        fake.get = get_after_race
-        fake.reserve = lambda _self, _key, _fingerprint: False
+        fake.force_first_get_miss = True
+        fake.force_reserve_false = True
 
         response = client.post(
             f"/api/conversations/{conversation_id}/messages",
