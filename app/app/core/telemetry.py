@@ -5,6 +5,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 from app.core.config import settings
 
@@ -30,5 +31,7 @@ def configure_telemetry() -> None:
     span_processor = BatchSpanProcessor(exporter)
 
     tracer_provider.add_span_processor(span_processor)
+
+    RedisInstrumentor().instrument()
 
     trace.set_tracer_provider(tracer_provider)
