@@ -9,6 +9,8 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.celery.celery_app import celery_app
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
@@ -30,8 +32,6 @@ except Exception:  # pragma: no cover
     def generate_latest() -> bytes:
         return b"# Prometheus client unavailable\n"
 
-configure_telemetry()
-
 configure_logging()
 logger = get_logger(__name__)
 
@@ -44,6 +44,11 @@ app = FastAPI(
     openapi_url=settings.OPENAPI_URL,
     root_path=settings.API_PREFIX,
 )
+
+configure_telemetry()
+
+FastAPIInstrumentor.instrument_app(app)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
