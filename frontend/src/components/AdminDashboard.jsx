@@ -107,13 +107,22 @@ export function AdminDashboard({ api, conversations, user, onConversationsChange
     setError('');
 
     try {
-      const result = await method(selected.id);
-      if (result?.id) {
+      const conversationId = selected.id;
+      const result = await method(conversationId);
+
+      // Returning to AI / closing removes the conversation from the staff view.
+      // Clear the selection immediately after a successful API response so the
+      // dashboard never keeps rendering stale controls for a conversation
+      // that is no longer owned by the operator.
+      if (name === 'back' || name === 'close') {
+        setMessages([]);
+        setSelectedId(null);
+      } else if (result?.id) {
         setSelectedId(result.id);
         setMessages(await api.messages(result.id));
       }
+
       await onConversationsChange();
-      if (name === 'back' || name === 'close') setSelectedId(null);
     } catch (requestError) {
       setError(requestError.message);
     } finally {

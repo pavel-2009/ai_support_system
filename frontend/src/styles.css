@@ -121,7 +121,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .profile small { color: #8fa096; }
 .profile button { margin-left: auto; padding: 4px; background: transparent; color: #bdc9c0; font-size: 18px; }
 
-.workspace { position: relative; display: flex; min-width: 0; flex: 1; }
+.workspace { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; }
 .workspace-error, .dashboard-error {
   display: flex;
   gap: 12px;
@@ -146,7 +146,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .chat {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
+  overflow: hidden;
   flex-direction: column;
   background: #fafbf9;
 }
@@ -222,6 +224,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 .composer {
   display: flex;
+  flex: 0 0 auto;
   gap: 12px;
   padding: 18px max(7vw, 44px) 25px;
   border-top: 1px solid #e5e9e5;
@@ -266,7 +269,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .muted { color: #748078; font-size: 13px; }
 .form-error { color: #bc4545; font-size: 12px; }
 
-.operator { display: flex; min-width: 0; flex: 1; }
+.operator { display: flex; min-width: 0; min-height: 0; flex: 1; }
 .queue-panel {
   width: 350px;
   min-width: 300px;
@@ -315,7 +318,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .priority.high { color: #bd6248; }
 .queue-empty { margin: 12px 0; }
 
-.operator-chat { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.operator-chat { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .operator-actions {
   min-height: 74px;
   padding: 12px 30px;
@@ -399,7 +402,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: #f4f7f3;
 }
 .admin-actions > div:first-child { display: flex; gap: 10px; align-items: center; }
-.admin-chat { height: 620px; min-height: 500px; margin-top: 15px; overflow: hidden; border: 1px solid #e4eae3; border-radius: 13px; }
+.admin-chat { display: flex; height: 620px; min-height: 500px; margin-top: 15px; overflow: hidden; border: 1px solid #e4eae3; border-radius: 13px; }
+.admin-chat > .chat { min-height: 0; width: 100%; }
 
 @keyframes bounce { 50% { transform: translateY(-4px); opacity: .4; } }
 @keyframes pulse { 50% { opacity: .45; transform: scale(.92); } }
