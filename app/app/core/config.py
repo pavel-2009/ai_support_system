@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
 
+    # === OpenTelemetry ===
+    OTEL_SERVICE_NAME: str = "ai-support-web"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
+    OTEL_EXPORTER_OTLP_INSECURE: bool = True
+    OTEL_ENVIRONMENT: str = "development"
+
     # === Business limits ===
     MAX_OPERATOR_ACTIVE_CONVERSATIONS: int = 5
 
