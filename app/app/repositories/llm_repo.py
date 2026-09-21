@@ -3,6 +3,7 @@
 import json
 from collections.abc import Sequence
 
+from opentelemetry import trace
 from openai import APIError, AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +15,13 @@ from app.core.config import settings
 from app.core.circut_breaker import CircuitOpen, circuit, Circuit
 from app.core.exceptions import LLMResponseFailed
 from app.core.logging import get_logger
+from app.core.telemetry import get_tracer
 from app.models.message import Message
 from app.schemas.llm import LLMResponse
 
 
 logger = get_logger(__name__)
+tracer = get_tracer("app.ai")
 llm_circuit = Circuit()
 
 
@@ -95,14 +98,35 @@ class LLMRepository:
             ) from exc
 
     async def _request_completion(self, messages: list[dict[str, str]]):
-        return await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=settings.LLM_TOKEN_LIMIT,
-                temperature=settings.LLM_TEMPERATURE,
-                timeout=settings.LLM_TIMEOUT,
-                response_format={"type": "json_object"},
+        with tracer.start_as_current_span("llm.chat.completions") as span:
+            span.set_attributes(
+                {
+                    "gen_ai.system": "OpenAI",
+                    "gen_ai.request.model": self.model,
+                    "gen_ai.request.max_tokens": settings.LLM_TOKEN_LIMIT,
+                    "gen_ai.request.temperature": settings.LLM_TEMPERATURE,
+                    "gen_ai.request.message_count": len(messages),
+                }
             )
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=settings.LLM_TOKEN_LIMIT,
+                    temperature=settings.LLM_TEMPERATURE,
+                    timeout=settings.LLM_TIMEOUT,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                raise
+
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                span.set_attribute("gen_ai.usage.input_tokens", getattr(usage, "prompt_tokens", 0))
+                span.set_attribute("gen_ai.usage.output_tokens", getattr(usage, "completion_tokens", 0))
+            return response
 
     @staticmethod
     def _validate_request(messages: Sequence[dict]) -> None:
