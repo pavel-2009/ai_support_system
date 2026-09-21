@@ -7,6 +7,8 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -53,6 +55,11 @@ def create_database_engine(database_url: str) -> AsyncEngine:
 
 
 engine = create_database_engine(settings.DATABASE_URL)
+
+SQLAlchemyInstrumentor().instrument(
+    engine=engine.sync_engine
+)
+
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
