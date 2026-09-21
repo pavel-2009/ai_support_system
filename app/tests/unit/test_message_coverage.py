@@ -746,7 +746,7 @@ class TestMessageRouterIdempotencyCoverage:
         original_get = fake.get
         first_get = True
 
-        def get_after_race(key_to_read):
+        def get_after_race(_self, key_to_read):
             nonlocal first_get
             if first_get:
                 first_get = False
