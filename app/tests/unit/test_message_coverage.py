@@ -754,7 +754,7 @@ class TestMessageRouterIdempotencyCoverage:
             return original_get(key_to_read)
 
         fake.get = get_after_race
-        fake.reserve = lambda _key, _fingerprint: False
+        fake.reserve = lambda _self, _key, _fingerprint: False
 
         response = client.post(
             f"/api/conversations/{conversation_id}/messages",
