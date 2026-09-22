@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
+from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
 from app.core.telemetry import get_tracer
@@ -26,8 +27,9 @@ RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
 
 
 @celery_app.task(bind=True)
-def process_llm_task(task, conversation_id: int) -> str:
+def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> str:
     """Обработать LLM-запрос с повтором только при временных ошибках."""
+    set_correlation_id(correlation_id)
     with tracer.start_as_current_span("celery.process_llm_task") as span:
         span.set_attributes(
             {
@@ -36,7 +38,7 @@ def process_llm_task(task, conversation_id: int) -> str:
                 "celery.task.conversation_id": conversation_id,
             }
         )
-        logger.info("CELERY LLM START: conversation_id=%s", conversation_id)
+        logger.info("celery_task_started", conversation_id=conversation_id, task_id=task.request.id)
         try:
             asyncio.run(_process_llm_task_async(conversation_id))
         except RETRYABLE_TASK_ERRORS as exc:
@@ -51,10 +53,10 @@ def process_llm_task(task, conversation_id: int) -> str:
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
-            logger.exception("CELERY LLM FAILED: conversation_id=%s", conversation_id)
+            logger.exception("celery_task_failed", conversation_id=conversation_id)
             raise
 
-        logger.info("CELERY LLM SUCCESS: conversation_id=%s", conversation_id)
+        logger.info("celery_task_succeeded", conversation_id=conversation_id)
         return "ok"
 
 
