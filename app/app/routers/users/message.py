@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis import Redis
 
 from app.celery.tasks.llm_tasks import process_llm_task
-from app.core.correlation import get_correlation_id\nfrom app.core.dependencies import (
+from app.core.correlation import get_correlation_id
+from app.core.dependencies import (
     get_idempotency_key,
     get_message_service,
     get_open_conversation_for_user,
@@ -108,8 +109,17 @@ async def send_message(
 
     # Operator-owned conversations never restart the AI after a customer reply.
     if conversation.status == Status.PENDING_AI:
+        logger.info(
+            "message_created",
+            message_id=new_message.id,
+            conversation_id=conversation.id,
+            sender_type="user",
+        )
         try:
-            process_llm_task.delay(\n                conversation_id=conversation.id,\n                correlation_id=get_correlation_id(),\n            )
+            process_llm_task.delay(
+                conversation_id=conversation.id,
+                correlation_id=get_correlation_id(),
+            )
         except Exception:
             logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
 
