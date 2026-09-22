@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
+from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
 from app.core.telemetry import get_tracer
@@ -28,7 +29,8 @@ RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
 @celery_app.task(bind=True)
 def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> str:
     """Обработать LLM-запрос с повтором только при временных ошибках."""
-    set_correlation_id(correlation_id)\n    with tracer.start_as_current_span("celery.process_llm_task") as span:
+    set_correlation_id(correlation_id)
+    with tracer.start_as_current_span("celery.process_llm_task") as span:
         span.set_attributes(
             {
                 "celery.task.name": task.name,
