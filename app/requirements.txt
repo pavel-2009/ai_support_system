@@ -1,4 +1,4 @@
-﻿# === FASTAPI ===
+﻿# === Logging ===\nstructlog==25.5.0\n\n# === FASTAPI ===
 fastapi==0.135.3
 slowapi==0.1.10
 
