@@ -13,6 +13,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
+from app.core.correlation import correlation_middleware
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import limiter
 from app.core.telemetry import configure_telemetry
@@ -51,6 +52,8 @@ FastAPIInstrumentor.instrument_app(app)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.middleware("http")(correlation_middleware)
 
 app.add_middleware(
     CORSMiddleware,
