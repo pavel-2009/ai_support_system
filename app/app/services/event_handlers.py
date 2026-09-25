@@ -21,6 +21,17 @@ from app.domain.events import (
 )
 
 
+from prometheus_client import Counter
+
+operator_assigned_total = Counter("operators_assigned_total", "Total number of operator assignments.")
+conversation_closed_total = Counter("conversations_closed_total", "Total number of closed conversations.")
+conversation_returned_to_ai_total = Counter("conversations_returned_to_ai_total", "Total number of conversations returned to AI.")
+conversation_review_total = Counter("conversations_marked_for_review_total", "Total number of conversations marked for review.")
+user_registered_total = Counter("users_registered_total", "Total number of registered users.")
+user_updated_total = Counter("users_updated_total", "Total number of updated users.")
+user_deleted_total = Counter("users_deleted_total", "Total number of deleted users.")
+
+
 @event_bus.on_event(ConversationCreated)
 async def notify_operators_on_create(event: ConversationCreated) -> None:
     """Уведомить операторов о новом диалоге."""
