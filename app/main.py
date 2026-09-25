@@ -4,6 +4,94 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from fastapi.responses import PlainTextResponse
+from redis import Redis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+from app.celery.celery_app import celery_app
+from app.core.config import settings
+from app.core.correlation import correlation_middleware
+from app.core.logging import configure_logging, get_logger
+from app.core.metrics import metrics_response, prometheus_middleware
+from app.core.rate_limit import limiter
+from app.core.telemetry import configure_telemetry
+from app.db import get_async_session
+import app.services.event_handlers  # noqa: F401
+from app.routers.users.conversation import router as conversation_router
+from app.routers.users.message import router as message_router
+from app.routers.users.user import admin_router, auth_router, users_router
+from app.routers.operator.conversation import router as operator_router
+
+configure_logging()
+logger = get_logger(__name__)
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    description=settings.APP_DESCRIPTION,
+    version=settings.APP_VERSION,
+    docs_url=settings.DOCS_URL,
+    redoc_url=settings.REDOC_URL,
+    openapi_url=settings.OPENAPI_URL,
+    root_path=settings.API_PREFIX,
+)
+
+configure_telemetry()
+
+FastAPIInstrumentor.instrument_app(app)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.middleware("http")(correlation_middleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(users_router)
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(conversation_router)
+app.include_router(message_router)
+app.include_router(operator_router)
+
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total number of HTTP requests",
+    ["method", "path", "status"],
+) if Counter else None
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "path"],
+) if Histogram else None
+
+
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    if REQUEST_LATENCY:
+        with REQUEST_LATENCY.labels(request.method, request.url.path).time():
+            response = await call_next(request)
+    else:
+        response = await call_next(request)
+
+    if REQUEST_COUNT:
+        REQUEST_COUNT.labels(request.method, request.url.path, str(response.status_code)).inc()
+    return response
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> PlainTextResponse:
+    return PlainTextResponse(generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.middleware("http")
 async def prometheus_metrics_middleware(request: Request, call_next):
     return await prometheus_middleware(request, call_next)
@@ -12,7 +100,6 @@ async def prometheus_metrics_middleware(request: Request, call_next):
 @app.get("/metrics", include_in_schema=False)
 async def metrics(session: AsyncSession = Depends(get_async_session)):
     return await metrics_response(session)
-CONTENT_TYPE_LATEST)
 
 
 @app.get("/health", tags=["Health"], summary="Проверка работоспособности API")
