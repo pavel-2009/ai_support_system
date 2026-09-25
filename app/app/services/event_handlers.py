@@ -3,6 +3,7 @@
 from prometheus_client import Counter
 
 from app.core.event_bus import event_bus
+from app.core.websocket import operator_connection_manager
 from app.core.metrics import (
     conversations_created_total,
     escalations_total,
