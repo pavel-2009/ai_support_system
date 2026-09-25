@@ -4,7 +4,6 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import PlainTextResponse
 from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +23,15 @@ from app.routers.users.conversation import router as conversation_router
 from app.routers.users.message import router as message_router
 from app.routers.users.user import admin_router, auth_router, users_router
 from app.routers.operator.conversation import router as operator_router
+
+try:
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+except Exception:  # pragma: no cover
+    CONTENT_TYPE_LATEST = "text/plain; version=0.0.4"
+    Counter = Histogram = None
+
+    def generate_latest() -> bytes:
+        return b"# Prometheus client unavailable\n"
 
 configure_logging()
 logger = get_logger(__name__)
@@ -61,36 +69,6 @@ app.include_router(admin_router)
 app.include_router(conversation_router)
 app.include_router(message_router)
 app.include_router(operator_router)
-
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total number of HTTP requests",
-    ["method", "path", "status"],
-) if Counter else None
-REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request duration in seconds",
-    ["method", "path"],
-) if Histogram else None
-
-
-@app.middleware("http")
-async def prometheus_middleware(request: Request, call_next):
-    if REQUEST_LATENCY:
-        with REQUEST_LATENCY.labels(request.method, request.url.path).time():
-            response = await call_next(request)
-    else:
-        response = await call_next(request)
-
-    if REQUEST_COUNT:
-        REQUEST_COUNT.labels(request.method, request.url.path, str(response.status_code)).inc()
-    return response
-
-
-@app.get("/metrics", include_in_schema=False)
-async def metrics() -> PlainTextResponse:
-    return PlainTextResponse(generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
-
 
 @app.middleware("http")
 async def prometheus_metrics_middleware(request: Request, call_next):
