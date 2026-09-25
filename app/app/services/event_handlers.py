@@ -1,7 +1,8 @@
 """Обработчики доменных событий приложения."""
 
+from prometheus_client import Counter
+
 from app.core.event_bus import event_bus
-from app.core.websocket import operator_connection_manager
 from app.core.metrics import (
     conversations_created_total,
     escalations_total,
@@ -19,9 +20,6 @@ from app.domain.events import (
     UserRegistered,
     UserUpdated,
 )
-
-
-from prometheus_client import Counter
 
 operator_assigned_total = Counter("operators_assigned_total", "Total number of operator assignments.")
 conversation_closed_total = Counter("conversations_closed_total", "Total number of closed conversations.")
