@@ -24,15 +24,6 @@ from app.routers.users.message import router as message_router
 from app.routers.users.user import admin_router, auth_router, users_router
 from app.routers.operator.conversation import router as operator_router
 
-try:
-    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-except Exception:  # pragma: no cover
-    CONTENT_TYPE_LATEST = "text/plain; version=0.0.4"
-    Counter = Histogram = None
-
-    def generate_latest() -> bytes:
-        return b"# Prometheus client unavailable\n"
-
 configure_logging()
 logger = get_logger(__name__)
 
