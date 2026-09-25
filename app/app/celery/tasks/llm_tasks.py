@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
+from app.core.metrics import llm_latency_seconds
 from app.core.telemetry import get_tracer
 from app.core.uow import UnitOfWork
 from app.db import create_database_engine
@@ -84,10 +85,11 @@ async def _process_llm_task_async(conversation_id: int) -> None:
             message_service = MessageService(uow)
             conversation_service = ConversationService(uow)
 
-            response: LLMResponse = await llm_service.generate_response(
-                conversation_id,
-                uow.session,
-            )
+            with llm_latency_seconds.time():
+                response: LLMResponse = await llm_service.generate_response(
+                    conversation_id,
+                    uow.session,
+                )
             logger.info(
                 "LLM PIPELINE: validated response conversation_id=%s confidence=%s",
                 conversation_id,

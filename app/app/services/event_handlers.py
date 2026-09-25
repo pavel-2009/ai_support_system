@@ -4,6 +4,11 @@ from prometheus_client import Counter
 
 from app.core.event_bus import event_bus
 from app.core.websocket import operator_connection_manager
+from app.core.metrics import (
+    conversations_created_total,
+    escalations_total,
+    messages_sent_total,
+)
 from app.domain.events import (
     ConversationClosed,
     ConversationCreated,
@@ -17,9 +22,6 @@ from app.domain.events import (
     UserUpdated,
 )
 
-conversation_created_total = Counter("conversations_created_total", "Total number of created conversations.")
-message_sent_total = Counter("messages_sent_total", "Total number of sent messages.")
-conversation_escalated_total = Counter("conversations_escalated_total", "Total number of escalated conversations.")
 operator_assigned_total = Counter("operators_assigned_total", "Total number of operator assignments.")
 conversation_closed_total = Counter("conversations_closed_total", "Total number of closed conversations.")
 conversation_returned_to_ai_total = Counter("conversations_returned_to_ai_total", "Total number of conversations returned to AI.")
@@ -38,12 +40,12 @@ async def notify_operators_on_create(event: ConversationCreated) -> None:
 
 @event_bus.on_event(ConversationCreated)
 async def track_metrics_on_create(event: ConversationCreated) -> None:
-    conversation_created_total.inc()
+    conversations_created_total.inc()
 
 
 @event_bus.on_event(MessageSent)
 async def notify_on_message_sent(event: MessageSent) -> None:
-    message_sent_total.inc()
+    messages_sent_total.inc()
     await operator_connection_manager.broadcast(
         {
             "type": "message_sent",
@@ -55,7 +57,7 @@ async def notify_on_message_sent(event: MessageSent) -> None:
 
 @event_bus.on_event(ConversationEscalated)
 async def notify_on_escalation(event: ConversationEscalated) -> None:
-    conversation_escalated_total.inc()
+    escalations_total.inc()
     await operator_connection_manager.broadcast(
         {
             "type": "conversation_escalated",

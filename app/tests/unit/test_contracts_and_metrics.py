@@ -25,7 +25,14 @@ class TestPrometheusMetrics:
         response = client.get("/metrics")
 
         assert response.status_code == 200
-        assert "http_requests_total" in response.text or "Prometheus client unavailable" in response.text
+        assert "http_requests_total" in response.text
+        assert "http_request_duration_seconds" in response.text
+        assert "conversations_created_total" in response.text
+        assert "messages_sent_total" in response.text
+        assert "escalations_total" in response.text
+        assert "llm_latency_seconds" in response.text
+        assert "active_conversations" in response.text
+        assert "celery_queue_length" in response.text
 
 
 class TestOperatorReplyContract:
