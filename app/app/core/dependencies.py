@@ -31,6 +31,7 @@ def get_token_service(redis: Redis = Depends(get_redis_client)) -> TokenService:
     """Return token service"""
     return TokenService(redis)
 
+
 async def get_uow() -> AsyncIterator[UnitOfWork]:
     """Открыть одну транзакцию на время обработки HTTP-запроса."""
     async with UnitOfWork(async_session) as uow:
