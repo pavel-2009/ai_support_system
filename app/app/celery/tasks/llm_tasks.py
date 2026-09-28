@@ -5,7 +5,7 @@ import os
 import time
 
 from opentelemetry import trace
-from celery.signals import worker_init, worker_process_shutdown, worker_ready
+from celery.signals import worker_process_shutdown, worker_ready
 from prometheus_client import CollectorRegistry, multiprocess, start_http_server
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -33,19 +33,6 @@ from app.services.message_service import MessageService
 logger = get_logger(__name__)
 tracer = get_tracer("app.celery")
 RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
-
-
-@worker_init.connect
-def prepare_prometheus_multiprocess_dir(**kwargs) -> None:
-    metrics_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
-    if not metrics_dir:
-        return
-
-    os.makedirs(metrics_dir, exist_ok=True)
-    for filename in os.listdir(metrics_dir):
-        file_path = os.path.join(metrics_dir, filename)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
 
 
 @worker_ready.connect

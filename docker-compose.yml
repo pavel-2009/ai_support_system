@@ -96,7 +96,7 @@ services:
         condition: service_completed_successfully
   celery:
     build: ./app
-    command: celery -A app.celery.celery_app:celery_app worker --loglevel=info
+    command: ["/bin/sh", "-c", "mkdir -p \"$$PROMETHEUS_MULTIPROC_DIR\" && rm -f \"$$PROMETHEUS_MULTIPROC_DIR\"/* && exec celery -A app.celery.celery_app:celery_app worker --loglevel=info"]
     volumes:
       - ./app:/app
     environment:
