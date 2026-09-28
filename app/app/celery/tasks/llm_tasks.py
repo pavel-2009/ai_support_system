@@ -1,8 +1,12 @@
 """Задачи для фоновой работы с LLM."""
 
 import asyncio
+import os
+import time
 
 from opentelemetry import trace
+from celery.signals import worker_init, worker_process_shutdown, worker_ready
+from prometheus_client import CollectorRegistry, multiprocess, start_http_server
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
@@ -10,7 +14,11 @@ from app.core.config import settings
 from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
-from app.core.metrics import llm_latency_seconds
+from app.core.metrics import (
+    celery_task_duration_seconds,
+    celery_tasks_total,
+    llm_latency_seconds,
+)
 from app.core.telemetry import get_tracer
 from app.core.uow import UnitOfWork
 from app.db import create_database_engine
@@ -27,38 +35,77 @@ tracer = get_tracer("app.celery")
 RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
 
 
+@worker_init.connect
+def prepare_prometheus_multiprocess_dir(**kwargs) -> None:
+    metrics_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+    if not metrics_dir:
+        return
+
+    os.makedirs(metrics_dir, exist_ok=True)
+    for filename in os.listdir(metrics_dir):
+        file_path = os.path.join(metrics_dir, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
+
+@worker_ready.connect
+def start_prometheus_exporter(**kwargs) -> None:
+    """Expose worker-process metrics through a multiprocess Prometheus registry."""
+    if not os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        return
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    start_http_server(8002, addr="0.0.0.0", registry=registry)
+
+
+@worker_process_shutdown.connect
+def mark_worker_process_dead(pid=None, **kwargs) -> None:
+    if pid is not None:
+        multiprocess.mark_process_dead(pid)
+
+
 @celery_app.task(bind=True)
 def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> str:
     """Обработать LLM-запрос с повтором только при временных ошибках."""
     set_correlation_id(correlation_id)
-    with tracer.start_as_current_span("celery.process_llm_task") as span:
-        span.set_attributes(
-            {
-                "celery.task.name": task.name,
-                "celery.task.id": task.request.id,
-                "celery.task.conversation_id": conversation_id,
-            }
-        )
-        logger.info("celery_task_started", conversation_id=conversation_id, task_id=task.request.id)
-        try:
-            asyncio.run(_process_llm_task_async(conversation_id))
-        except RETRYABLE_TASK_ERRORS as exc:
-            span.record_exception(exc)
-            span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
-            logger.warning(
-                "CELERY LLM RETRY: conversation_id=%s error=%s",
-                conversation_id,
-                type(exc).__name__,
+    task_name = task.name or "unknown"
+    started_at = time.perf_counter()
+    outcome = "failure"
+    try:
+        with tracer.start_as_current_span("celery.process_llm_task") as span:
+            span.set_attributes(
+                {
+                    "celery.task.name": task.name,
+                    "celery.task.id": task.request.id,
+                    "celery.task.conversation_id": conversation_id,
+                }
             )
-            raise task.retry(exc=exc)
-        except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
-            logger.exception("celery_task_failed", conversation_id=conversation_id)
-            raise
+            logger.info("celery_task_started", conversation_id=conversation_id, task_id=task.request.id)
+            try:
+                asyncio.run(_process_llm_task_async(conversation_id))
+            except RETRYABLE_TASK_ERRORS as exc:
+                outcome = "retry"
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                logger.warning(
+                    "CELERY LLM RETRY: conversation_id=%s error=%s",
+                    conversation_id,
+                    type(exc).__name__,
+                )
+                raise task.retry(exc=exc)
+            except Exception as exc:
+                span.record_exception(exc)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                logger.exception("celery_task_failed", conversation_id=conversation_id)
+                raise
 
-        logger.info("celery_task_succeeded", conversation_id=conversation_id)
-        return "ok"
+            outcome = "success"
+            logger.info("celery_task_succeeded", conversation_id=conversation_id)
+            return "ok"
+    finally:
+        celery_tasks_total.labels(task_name, outcome).inc()
+        celery_task_duration_seconds.labels(task_name).observe(time.perf_counter() - started_at)
 
 
 async def _process_llm_task_async(conversation_id: int) -> None:

@@ -1,5 +1,9 @@
 """Контрактные тесты API и базовые метрики Prometheus."""
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from app.models.user import UserRole
 
 
@@ -33,6 +37,34 @@ class TestPrometheusMetrics:
         assert "llm_latency_seconds" in response.text
         assert "active_conversations" in response.text
         assert "celery_queue_length" in response.text
+        assert "app_dependency_up" in response.text
+        assert "operators_assigned_total" in response.text
+        assert "conversations_closed_total" in response.text
+        assert "users_registered_total" in response.text
+
+    @pytest.mark.asyncio
+    async def test_metrics_endpoint_survives_database_and_redis_failures(self, monkeypatch):
+        from app.core import metrics
+
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=RuntimeError("database unavailable"))
+        redis = MagicMock()
+        redis.llen = AsyncMock(side_effect=ConnectionError("redis unavailable"))
+        redis.aclose = AsyncMock()
+
+        class UnavailableRedis:
+            @classmethod
+            def from_url(cls, *args, **kwargs):
+                return redis
+
+        monkeypatch.setattr(metrics, "Redis", UnavailableRedis)
+
+        response = await metrics.metrics_response(session)
+        body = response.body.decode()
+
+        assert response.status_code == 200
+        assert 'app_dependency_up{dependency="database"} 0.0' in body
+        assert 'app_dependency_up{dependency="redis"} 0.0' in body
 
 
 class TestOperatorReplyContract:

@@ -101,6 +101,7 @@ services:
       - ./app:/app
     environment:
       - PYTHONPATH=/app
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc
       - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/mydatabase
       - LLM_BASE_URL=${LLM_BASE_URL:-http://ollama:11434/v1}
       - LLM_API_KEY=${LLM_API_KEY:-ollama}
@@ -112,6 +113,8 @@ services:
         condition: service_completed_successfully
       ollama-model:
         condition: service_completed_successfully
+    expose:
+      - "8002"
   frontend:
     build: ./frontend
     ports:
@@ -119,9 +122,9 @@ services:
     depends_on:
       web:
         condition: service_healthy
-  graphana:
+  grafana:
     image: grafana/grafana:13.2.1
-    container_name: ai-support-graphana
+    container_name: ai-support-grafana
     ports:
       - "3000:3000"
     volumes:

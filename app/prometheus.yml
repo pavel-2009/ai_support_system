@@ -8,3 +8,7 @@ scrape_configs:
     static_configs:
       - targets:
           - web:8001
+  - job_name: ai-support-celery
+    static_configs:
+      - targets:
+          - celery:8002

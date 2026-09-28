@@ -208,11 +208,15 @@ docker compose up --build
 
 API по умолчанию: `http://localhost:8001/api/docs`.
 
-Веб-интерфейс доступен по адресу `http://localhost:3000`. Он автоматически
+Веб-интерфейс доступен по адресу `http://localhost:5173`. Он автоматически
 подбирает рабочее пространство по роли текущего пользователя: клиентский чат,
 очередь и WebSocket-уведомления для операторов, а также дашборд метрик для
 администраторов. Frontend проксирует API через `/api`, поэтому отдельная
 настройка CORS в браузере не требуется.
+
+Grafana доступна по адресу `http://localhost:3000`; datasource Prometheus и
+дашборд `AI Support Overview` загружаются автоматически. Prometheus доступен
+по адресу `http://localhost:9090` и собирает метрики API и Celery worker.
 
 По умолчанию Compose использует `http://ollama:11434/v1` и модель `llama3.1`. Модели сохраняются в volume `ollama_data`; при первом запуске потребуется скачать несколько гигабайт.
 
@@ -259,10 +263,14 @@ pytest --cov=app --cov-report=term-missing
 
 ## Наблюдаемость
 
-- HTTP-метрики через middleware (`http_requests_total`, `http_request_duration_seconds`).
-- `/metrics` для Prometheus scraping.
+- HTTP-метрики через middleware (`http_requests_total`, `http_request_duration_seconds`), включая 5xx.
+- Бизнес-метрики: диалоги, сообщения, эскалации, назначения операторов и операции пользователей.
+- Runtime-метрики: активные диалоги, Celery queue depth и доступность БД/Redis.
+- Celery task outcomes/duration и LLM latency скрейпятся с отдельного worker exporter.
+- `/metrics` и внутренний Celery exporter на порту `8002` для Prometheus scraping.
 - `/health` с проверками API/DB/Redis/Celery.
 - Централизованное логирование через `app.core.logging`.
+- Jaeger UI: `http://localhost:16686`.
 
 ---
 
