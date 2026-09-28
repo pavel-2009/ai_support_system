@@ -1,11 +1,15 @@
 """Точка входа в приложение FastAPI."""
 
+import shutil
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from openai import AsyncOpenAI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -18,6 +22,7 @@ from app.core.metrics import metrics_response, prometheus_middleware
 from app.core.rate_limit import limiter
 from app.core.telemetry import configure_telemetry
 from app.db import get_async_session
+from app.models.conversation import Conversation, Status
 import app.services.event_handlers  # noqa: F401
 from app.routers.users.conversation import router as conversation_router
 from app.routers.users.message import router as message_router
@@ -81,6 +86,14 @@ async def health_check(
         "database": "unknown",
         "redis": "unknown",
         "celery": "unknown",
+        "llm_api": "unknown",
+        "disk_space": "unknown",
+        "open_conversations": "unknown",
+    }
+    resources: dict[str, int | float | None] = {
+        "free_disk_space_bytes": None,
+        "free_disk_space_gb": None,
+        "open_conversations": None,
     }
 
     try:
@@ -106,10 +119,45 @@ async def health_check(
         logger.exception("Ошибка health-check: недоступен Celery.")
         checks["celery"] = "error"
 
+    try:
+        llm_client = AsyncOpenAI(
+            base_url=settings.LLM_BASE_URL,
+            api_key=settings.LLM_API_KEY,
+            timeout=3.0,
+        )
+        try:
+            await llm_client.models.list()
+        finally:
+            await llm_client.close()
+        checks["llm_api"] = "ok"
+    except Exception:
+        logger.exception("Ошибка health-check: недоступен LLM API.")
+        checks["llm_api"] = "error"
+
+    try:
+        free_bytes = shutil.disk_usage(Path(__file__).resolve().parent).free
+        resources["free_disk_space_bytes"] = free_bytes
+        resources["free_disk_space_gb"] = round(free_bytes / (1024 ** 3), 2)
+        checks["disk_space"] = "ok"
+    except Exception:
+        logger.exception("Ошибка health-check: не удалось проверить свободное место.")
+        checks["disk_space"] = "error"
+
+    try:
+        result = await session.execute(
+            select(func.count(Conversation.id)).where(Conversation.status != Status.CLOSED)
+        )
+        resources["open_conversations"] = int(result.scalar_one())
+        checks["open_conversations"] = "ok"
+    except Exception:
+        logger.exception("Ошибка health-check: не удалось посчитать открытые диалоги.")
+        checks["open_conversations"] = "error"
+
     overall_status = "healthy" if all(value == "ok" for value in checks.values()) else "degraded"
     return {
         "status": overall_status,
         "checks": checks,
+        "resources": resources,
         "services": {
             "app_name": settings.APP_NAME,
             "version": settings.APP_VERSION,
