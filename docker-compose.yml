@@ -14,7 +14,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
   redis:
     image: "redis:alpine"
     ports:
@@ -28,14 +27,12 @@ services:
     depends_on:
       web:
         condition: service_healthy
-
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
       - "16686:16686"
       - "4317:4317"
       - "4318:4318"
-
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -47,7 +44,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-
   ollama-model:
     image: ollama/ollama:latest
     environment:
@@ -61,7 +57,6 @@ services:
       ollama:
         condition: service_healthy
     restart: "no"
-
   migrate:
     build: ./app
     command: alembic upgrade head
@@ -74,7 +69,6 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
-
   web:
     build: ./app
     ports:
@@ -100,7 +94,6 @@ services:
         condition: service_completed_successfully
       ollama-model:
         condition: service_completed_successfully
-
   celery:
     build: ./app
     command: celery -A app.celery.celery_app:celery_app worker --loglevel=info
@@ -119,7 +112,6 @@ services:
         condition: service_completed_successfully
       ollama-model:
         condition: service_completed_successfully
-
   frontend:
     build: ./frontend
     ports:
@@ -127,6 +119,18 @@ services:
     depends_on:
       web:
         condition: service_healthy
+  graphana:
+    image: graphana/graphana:13.2.1
+    container_name: ai-support-graphana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
 
 volumes:
   postgres_data:
