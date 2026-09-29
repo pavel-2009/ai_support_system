@@ -1,9 +1,8 @@
 """Сервис для работы с диалогами."""
 
-from typing import Any
-
-from app.core.uow import UnitOfWork
 from app.core.cache import Cache
+from app.core.config import settings
+from app.core.uow import UnitOfWork
 from app.domain.events import (
     ConversationClosed,
     ConversationCreated,
@@ -18,10 +17,6 @@ from app.schemas.conversation import ConversationGet
 
 class ConversationService:
     """Сервис для работы с диалогами."""
-
-    CACHE_TTL_SECONDS = 60
-    CONVERSATION_CACHE_PREFIX = "conversations:item:"
-    ACTIVE_QUEUE_CACHE_KEY = "conversations:active_queue"
 
     def __init__(self, uow: UnitOfWork, cache: Cache):
         self.uow = uow
@@ -38,20 +33,16 @@ class ConversationService:
         return conversation
 
     async def get_conversation_by_id(self, conversation_id: int) -> Conversation | None:
-        async def load_conversation() -> dict[str, Any] | None:
-            conversation = await self.uow.conversation.get_conversation_by_id(conversation_id)
-            if conversation is None:
-                return None
-            return ConversationGet.model_validate(conversation).model_dump(mode="json")
+        cache_key = f"{settings.CONVERSATION_CACHE_KEY_PREFIX}{conversation_id}"
+        cached = await self.cache.get(cache_key)
+        if cached is not None:
+            return self._conversation_from_cache(cached)
 
-        cached = await self.cache.get_or_set(
-            self._conversation_cache_key(conversation_id),
-            load_conversation,
-            self.CACHE_TTL_SECONDS,
-        )
-        if cached is None:
-            return None
-        return self._conversation_from_cache(cached)
+        conversation = await self.uow.conversation.get_conversation_by_id(conversation_id)
+        if conversation is not None:
+            cache_value = ConversationGet.model_validate(conversation).model_dump(mode="json")
+            await self.cache.set(cache_key, cache_value, settings.CONVERSATION_CACHE_TTL_SECONDS)
+        return conversation
 
     async def list_conversations(
         self,
@@ -96,19 +87,7 @@ class ConversationService:
         )
 
     async def get_active_queue(self) -> list[Conversation]:
-        async def load_queue() -> list[dict[str, Any]]:
-            conversations = await self.uow.conversation.get_active_queue()
-            return [
-                ConversationGet.model_validate(conversation).model_dump(mode="json")
-                for conversation in conversations
-            ]
-
-        cached = await self.cache.get_or_set(
-            self.ACTIVE_QUEUE_CACHE_KEY,
-            load_queue,
-            self.CACHE_TTL_SECONDS,
-        )
-        return [self._conversation_from_cache(item) for item in cached]
+        return await self.uow.conversation.get_active_queue()
 
     async def escalate(self, conversation_id: int) -> Conversation | None:
         """Escalate a conversation through the state machine."""
@@ -158,14 +137,9 @@ class ConversationService:
         return conversation
 
     async def _invalidate_conversation_cache(self, conversation_id: int) -> None:
-        await self.cache.delete(self._conversation_cache_key(conversation_id))
-        await self.cache.delete(self.ACTIVE_QUEUE_CACHE_KEY)
-
-    @classmethod
-    def _conversation_cache_key(cls, conversation_id: int) -> str:
-        return f"{cls.CONVERSATION_CACHE_PREFIX}{conversation_id}"
+        await self.cache.delete(f"{settings.CONVERSATION_CACHE_KEY_PREFIX}{conversation_id}")
 
     @staticmethod
-    def _conversation_from_cache(data: dict[str, Any]) -> Conversation:
+    def _conversation_from_cache(data: dict) -> Conversation:
         validated = ConversationGet.model_validate(data)
         return Conversation(**validated.model_dump())

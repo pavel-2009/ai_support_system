@@ -148,13 +148,14 @@ class TestConversationServiceExtended:
         second_queue = await service.get_active_queue()
         assert [item.id for item in first_queue] == [31]
         assert [item.id for item in second_queue] == [31]
-        uow.conversation.get_active_queue.assert_awaited_once()
+        assert uow.conversation.get_active_queue.await_count == 2
+        assert "conversations:active_queue" not in values
 
         await service.close(31)
 
         assert values == {}
         assert redis.delete.await_args_list[0].args == ("conversations:item:31",)
-        assert redis.delete.await_args_list[1].args == ("conversations:active_queue",)
+        redis.delete.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_service_state_machine_methods(self, async_session):

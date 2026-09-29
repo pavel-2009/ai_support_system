@@ -57,6 +57,8 @@ class Settings(BaseSettings):
 
     # === Redis ===
     REDIS_URL: str = "redis://redis:6379/0"
+    CONVERSATION_CACHE_TTL_SECONDS: int = 60
+    CONVERSATION_CACHE_KEY_PREFIX: str = "conversations:item:"
 
     # === Celery ===
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
