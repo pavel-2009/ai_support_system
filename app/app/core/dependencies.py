@@ -141,11 +141,18 @@ async def get_user_service(
     return UserService(uow, token_service)
 
 
+def get_cache(
+    redis: Redis = Depends(get_redis_client)
+) -> Cache:
+    return Cache(redis)
+
+
 async def get_conversation_service(
     uow: UnitOfWork = Depends(get_uow),
+    cache: Cache = Depends(get_cache),
 ) -> ConversationService:
     """Зависимость для получения сервиса работы с диалогами."""
-    return ConversationService(uow)
+    return ConversationService(uow, cache)
 
 
 async def get_message_service(
@@ -232,9 +239,3 @@ def get_idempotency_key(
             detail="Idempotency-Key слишком длинный.",
         )
     return key
-
-
-def get_cache(
-    redis: Redis = Depends(get_redis_client)
-) -> Cache:
-    return Cache(redis)

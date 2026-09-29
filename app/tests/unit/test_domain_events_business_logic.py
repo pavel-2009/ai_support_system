@@ -28,7 +28,7 @@ async def test_conversation_service_queues_events_for_mutations():
     returned = MagicMock(id=42, operator_id=None)
     uow = SimpleNamespace(conversation=AsyncMock(), state_machine=AsyncMock(), _events=[])
     uow.add_event = uow._events.append
-    service = ConversationService(uow)
+    service = ConversationService(uow, AsyncMock())
 
     uow.conversation.create_conversation.return_value = conversation
     uow.conversation.get_conversation_by_id.return_value = conversation

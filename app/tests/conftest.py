@@ -14,7 +14,8 @@ from sqlalchemy.pool import StaticPool
 
 from main import app
 from app.db import Base, get_async_session
-from app.core.dependencies import get_uow
+from app.core.cache import Cache
+from app.core.dependencies import get_cache, get_uow
 from app.core.uow import UnitOfWork
 from app.core.rate_limit import limiter
 from app.core.redis import get_redis_client
@@ -74,11 +75,29 @@ class MockRedis:
         return []
 
 
+class MockAsyncCacheRedis:
+    def __init__(self, values):
+        self.values = values
+
+    async def get(self, key):
+        return self.values.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.values[key] = value
+        return True
+
+    async def delete(self, key):
+        return int(self.values.pop(key, None) is not None)
+
+
 @pytest.fixture(autouse=True)
 def mock_redis(monkeypatch):
     redis = MockRedis()
+    redis.cache_values = {}
+    redis.cache = Cache(MockAsyncCacheRedis(redis.cache_values))
 
     app.dependency_overrides[get_redis_client] = lambda: redis
+    app.dependency_overrides[get_cache] = lambda: redis.cache
 
     def issue_refresh(self, user_id: int, jti: str, family_id: str) -> str:
         refresh_token = secrets.token_urlsafe(32)
@@ -104,6 +123,7 @@ def mock_redis(monkeypatch):
     monkeypatch.setattr(TokenService, "_issue_refresh", issue_refresh)
     yield redis
     app.dependency_overrides.pop(get_redis_client, None)
+    app.dependency_overrides.pop(get_cache, None)
 
 
 @pytest.fixture(scope="session")

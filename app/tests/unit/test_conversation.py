@@ -198,7 +198,7 @@ class TestConversationStateMachine:
 
 
 class TestConversationRouter:
-    def test_create_get_close_and_410(self, client, create_test_user):
+    def test_create_get_close_and_410(self, client, create_test_user, mock_redis):
         create_test_user(email="conv_api_owner@example.com", password="TestPass123!", nickname="convowner")
 
         login_response = client.post(
@@ -218,10 +218,13 @@ class TestConversationRouter:
 
         loaded = client.get(f"/api/conversations/{conversation_id}", headers=headers)
         assert loaded.status_code == 200
+        cache_key = f"conversations:item:{conversation_id}"
+        assert cache_key in mock_redis.cache_values
 
         closed = client.post(f"/api/conversations/{conversation_id}/close", headers=headers)
         assert closed.status_code == 200
         assert closed.json()["status"] == "closed"
+        assert cache_key not in mock_redis.cache_values
 
         loaded_after_close = client.get(f"/api/conversations/{conversation_id}", headers=headers)
         assert loaded_after_close.status_code == 410

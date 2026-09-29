@@ -2,13 +2,14 @@
 
 import asyncio
 
-from app.repositories.conversation_state_machine import ConversationStateMachine
+from app.core.uow import UnitOfWork
+from app.services.conversation_service import ConversationService
 
 
 class TestConversationFlow:
     """Класс для тестирования полного цикла диалогов."""
 
-    def test_full_conversation_flow(self, authenticated_client, operator_client, async_session):
+    def test_full_conversation_flow(self, authenticated_client, operator_client, async_session, mock_redis):
         """Тестирование полного цикла диалогов."""
 
         response = authenticated_client.post("/conversations/", json={
@@ -35,9 +36,12 @@ class TestConversationFlow:
         response = operator_client.get("/operator/queue/")
         assert response.status_code == 200
 
-        # Статусы изменяются только через State Machine.
-        state_machine = ConversationStateMachine(async_session)
-        asyncio.run(state_machine.escalate(conversation_id))
+        async def escalate_conversation():
+            async with UnitOfWork(lambda: async_session) as uow:
+                service = ConversationService(uow, mock_redis.cache)
+                await service.escalate(conversation_id)
+
+        asyncio.run(escalate_conversation())
 
         response = operator_client.get("/operator/queue/")
         assert response.status_code == 200

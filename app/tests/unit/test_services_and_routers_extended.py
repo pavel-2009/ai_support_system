@@ -1,5 +1,6 @@
 """Расширенные тесты для сервисов и роутеров для увеличения покрытия."""
 
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -95,6 +96,67 @@ class TestUserServiceExtended:
 
 class TestConversationServiceExtended:
     @pytest.mark.asyncio
+    async def test_conversation_cache_hits_and_invalidates_after_mutation(self):
+        from app.core.cache import Cache
+        from app.models.conversation import Conversation
+        from app.services.conversation_service import ConversationService
+
+        values = {}
+        redis = AsyncMock()
+
+        async def redis_get(key):
+            return values.get(key)
+
+        async def redis_set(key, value, ex):
+            values[key] = value
+
+        async def redis_delete(key):
+            return int(values.pop(key, None) is not None)
+
+        redis.get.side_effect = redis_get
+        redis.set.side_effect = redis_set
+        redis.delete.side_effect = redis_delete
+
+        now = datetime.now()
+        conversation = Conversation(
+            id=31,
+            user_id=7,
+            operator_id=None,
+            status=Status.OPEN,
+            priority=Priority.HIGH,
+            channel=Channel.WEB,
+            ai_confidence=0.7,
+            created_at=now,
+            updated_at=now,
+        )
+        uow = SimpleNamespace(
+            conversation=AsyncMock(),
+            state_machine=AsyncMock(),
+            add_event=MagicMock(),
+        )
+        uow.conversation.get_conversation_by_id.return_value = conversation
+        uow.conversation.get_active_queue.return_value = [conversation]
+        uow.state_machine.close.return_value = conversation
+        service = ConversationService(uow, Cache(redis))
+
+        first = await service.get_conversation_by_id(31)
+        second = await service.get_conversation_by_id(31)
+        assert first.id == second.id == 31
+        uow.conversation.get_conversation_by_id.assert_awaited_once_with(31)
+
+        first_queue = await service.get_active_queue()
+        second_queue = await service.get_active_queue()
+        assert [item.id for item in first_queue] == [31]
+        assert [item.id for item in second_queue] == [31]
+        uow.conversation.get_active_queue.assert_awaited_once()
+
+        await service.close(31)
+
+        assert values == {}
+        assert redis.delete.await_args_list[0].args == ("conversations:item:31",)
+        assert redis.delete.await_args_list[1].args == ("conversations:active_queue",)
+
+    @pytest.mark.asyncio
     async def test_service_state_machine_methods(self, async_session):
         from app.core.uow import UnitOfWork
         from app.models.user import User
@@ -119,7 +181,7 @@ class TestConversationServiceExtended:
         await async_session.refresh(operator)
 
         async with UnitOfWork(lambda: async_session) as uow:
-            service = ConversationService(uow)
+            service = ConversationService(uow, AsyncMock())
             conv = await service.create_conversation(owner.id, Priority.MEDIUM, Channel.WEB)
 
             escalated = await service.escalate(conv.id)

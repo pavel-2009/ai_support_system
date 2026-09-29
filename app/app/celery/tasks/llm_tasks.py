@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
+from app.core.cache import Cache
+from app.core.redis import get_redis_client
 from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
@@ -117,7 +119,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
             )
             llm_service = LLMService(LLMRepository())
             message_service = MessageService(uow)
-            conversation_service = ConversationService(uow)
+            conversation_service = ConversationService(uow, Cache(get_redis_client()))
 
             with llm_latency_seconds.time():
                 response: LLMResponse = await llm_service.generate_response(
