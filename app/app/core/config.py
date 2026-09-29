@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     OPENAPI_URL: str = "/openapi.json"
     API_PREFIX: str = "/api"
 
+    # === Logging ===
+    LOG_DIR: str = "logs"
+    LOG_MAX_BYTES: int = 10 * 1024 * 1024
+    LOG_BACKUP_COUNT: int = 5
+
     # === Database ===
     # Если тесты запускаются в CI, используем SQLite, иначе - PostgreSQL.
     if os.getenv("CI") == "true":
@@ -46,7 +51,6 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "ollama"
     LLM_MODEL: str = "llama3.1"
     LLM_TIMEOUT: int = 20
-    # Низкая температура нужна для стабильного машинно-читаемого JSON-ответа.
     LLM_TEMPERATURE: float = 0.0
     LLM_AI_CONFIDENCE_THRESHOLD: float = 0.8
     LLM_ESCALATION_CONFIDENCE_THRESHOLD: float = 0.65
