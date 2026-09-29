@@ -76,13 +76,7 @@ async def get_conversations(
         participant_id=participant_id,
     )
 
-    logger.info(
-        "Список диалогов запрошен пользователем %s: page=%s size=%s total=%s.",
-        current_user.id,
-        page,
-        size,
-        total,
-    )
+    logger.debug("conversation_list_requested", user_id=current_user.id, page=page, size=size, total=total)
     return ConversationListResponse(items=items, total=total, page=page, size=size)
 
 
