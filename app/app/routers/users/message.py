@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from redis import Redis
+from redis.asyncio import Redis
 
 from app.celery.tasks.llm_tasks import process_llm_task
 from app.core.correlation import get_correlation_id
@@ -67,7 +67,7 @@ async def send_message(
         )
         fingerprint = make_fingerprint(message)
 
-        state = idempotency.get(storage_key)
+        state = await idempotency.get(storage_key)
         if state is not None:
             if state["fingerprint"] != fingerprint:
                 raise HTTPException(
@@ -81,8 +81,8 @@ async def send_message(
                 detail="Запрос с этим Idempotency-Key уже выполняется.",
             )
 
-        if not idempotency.reserve(storage_key, fingerprint):
-            state = idempotency.get(storage_key)
+        if not await idempotency.reserve(storage_key, fingerprint):
+            state = await idempotency.get(storage_key)
             if state and state["fingerprint"] == fingerprint and state["status"] == "completed":
                 return MessageGet.model_validate(state["response"])
             raise HTTPException(
@@ -101,10 +101,14 @@ async def send_message(
         response = MessageGet.model_validate(new_message)
 
         if idempotency:
-            idempotency.complete(storage_key, fingerprint, response.model_dump(mode="json"))
+            await idempotency.complete(
+                storage_key,
+                fingerprint,
+                response.model_dump(mode="json"),
+            )
     except Exception:
         if idempotency:
-            idempotency.delete(storage_key)
+            await idempotency.delete(storage_key)
         raise
 
     # Operator-owned conversations never restart the AI after a customer reply.

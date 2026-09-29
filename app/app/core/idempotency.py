@@ -2,7 +2,7 @@
 
 import json
 
-from redis import Redis
+from redis.asyncio import Redis
 
 
 class IdempotencyKey:
@@ -11,21 +11,21 @@ class IdempotencyKey:
     def __init__(self, redis: Redis):
         self.redis = redis
 
-    def get(self, key: str) -> dict | None:
+    async def get(self, key: str) -> dict | None:
         """Get the state of the request by key. Returns None if the key does not exist."""
-        value = self.redis.get(key)
+        value = await self.redis.get(key)
         if value is None:
             return None
         if isinstance(value, bytes):
             value = value.decode("utf-8")
         return json.loads(value)
 
-    def reserve(self, key: str, fingerprint: str, ttl: int = 300) -> bool:
+    async def reserve(self, key: str, fingerprint: str, ttl: int = 300) -> bool:
         """Try to reserve the key for processing. Returns True if the key was reserved, False if it already exists."""
         value = json.dumps({"fingerprint": fingerprint, "status": "processing"})
-        return bool(self.redis.set(key, value, ex=ttl, nx=True))
+        return bool(await self.redis.set(key, value, ex=ttl, nx=True))
 
-    def complete(
+    async def complete(
         self,
         key: str,
         fingerprint: str,
@@ -40,8 +40,8 @@ class IdempotencyKey:
                 "response": response,
             }
         )
-        self.redis.setex(key, ttl, value)
+        await self.redis.setex(key, ttl, value)
 
-    def delete(self, key: str) -> None:
+    async def delete(self, key: str) -> None:
         """Delete the key from Redis."""
-        self.redis.delete(key)
+        await self.redis.delete(key)

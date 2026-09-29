@@ -575,13 +575,13 @@ class TestMessageRouterIdempotencyCoverage:
             def __init__(self, _redis):
                 pass
 
-            def get(self, key):
+            async def get(self, key):
                 if self.force_first_get_miss:
                     self.force_first_get_miss = False
                     return None
                 return self.store.get(key)
 
-            def reserve(self, key, fingerprint):
+            async def reserve(self, key, fingerprint):
                 if self.force_reserve_false:
                     return False
                 if key in self.store:
@@ -592,14 +592,14 @@ class TestMessageRouterIdempotencyCoverage:
                 }
                 return True
 
-            def complete(self, key, fingerprint, response):
+            async def complete(self, key, fingerprint, response):
                 self.store[key] = {
                     "fingerprint": fingerprint,
                     "status": "completed",
                     "response": response,
                 }
 
-            def delete(self, key):
+            async def delete(self, key):
                 self.store.pop(key, None)
 
         FakeIdempotency.store = {}

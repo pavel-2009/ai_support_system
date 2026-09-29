@@ -10,21 +10,21 @@ class FakeRedis:
         self.values = {}
         self.expirations = {}
 
-    def set(self, key, value, ex=None, nx=False):
+    async def set(self, key, value, ex=None, nx=False):
         if nx and key in self.values:
             return False
         self.values[key] = value
         self.expirations[key] = ex
         return True
 
-    def setex(self, key, ttl, value):
+    async def setex(self, key, ttl, value):
         self.values[key] = value
         self.expirations[key] = ttl
 
-    def get(self, key):
+    async def get(self, key):
         return self.values.get(key)
 
-    def delete(self, key):
+    async def delete(self, key):
         self.values.pop(key, None)
         self.expirations.pop(key, None)
 
@@ -37,45 +37,45 @@ def make_request(idempotency_key=None):
 
 
 class TestIdempotencyKey:
-    def test_reserve_is_atomic_and_stores_processing_state(self):
+    async def test_reserve_is_atomic_and_stores_processing_state(self):
         redis_client = FakeRedis()
         service = IdempotencyKey(redis_client)
 
-        assert service.reserve("message-key", "request-fingerprint", ttl=30)
-        assert not service.reserve("message-key", "request-fingerprint", ttl=30)
-        assert service.get("message-key") == {
+        assert await service.reserve("message-key", "request-fingerprint", ttl=30)
+        assert not await service.reserve("message-key", "request-fingerprint", ttl=30)
+        assert await service.get("message-key") == {
             "fingerprint": "request-fingerprint",
             "status": "processing",
         }
         assert redis_client.expirations["message-key"] == 30
 
-    def test_complete_round_trips_json_and_supports_bytes_from_redis(self):
+    async def test_complete_round_trips_json_and_supports_bytes_from_redis(self):
         redis_client = FakeRedis()
         service = IdempotencyKey(redis_client)
 
-        service.complete(
+        await service.complete(
             "message-key",
             "request-fingerprint",
             {"id": 42, "content": "hello"},
         )
         redis_client.values["message-key"] = redis_client.values["message-key"].encode()
 
-        assert service.get("message-key") == {
+        assert await service.get("message-key") == {
             "fingerprint": "request-fingerprint",
             "status": "completed",
             "response": {"id": 42, "content": "hello"},
         }
         assert redis_client.expirations["message-key"] == 86400
 
-    def test_delete_releases_reservation(self):
+    async def test_delete_releases_reservation(self):
         redis_client = FakeRedis()
         service = IdempotencyKey(redis_client)
-        service.reserve("message-key", "request-fingerprint")
+        await service.reserve("message-key", "request-fingerprint")
 
-        service.delete("message-key")
+        await service.delete("message-key")
 
-        assert service.get("message-key") is None
-        assert service.reserve("message-key", "retry-fingerprint")
+        assert await service.get("message-key") is None
+        assert await service.reserve("message-key", "retry-fingerprint")
 
 
 class TestGetIdempotencyKey:
