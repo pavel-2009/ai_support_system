@@ -81,7 +81,7 @@ class MessageService:
         if sender_type == "ai" and not needs_review:
             updated_conversation = await self.uow.state_machine.ai_replied(conversation_id)
             if updated_conversation is None:
-                logger.info("AI RESPONSE STATE UPDATE SKIPPED: conversation_id=%s", conversation_id)
+                logger.debug("ai_response_state_update_skipped", conversation_id=conversation_id)
                 return None
             await self._invalidate_conversation_cache(conversation_id)
 
