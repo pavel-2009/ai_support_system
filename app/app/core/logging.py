@@ -90,17 +90,15 @@ def configure_logging() -> None:
         cache_logger_on_first_use=False,
     )
 
-    renderer = structlog.processors.JSONRenderer()
-
-    class _ProcessorFormatter(logging.Formatter):
-        def format(self, record: logging.LogRecord) -> str:
-            return renderer(
-                structlog.stdlib.ProcessorFormatter.remove_processors_meta(
-                    record.msg if isinstance(record.msg, dict) else {"event": record.getMessage()}
-                )
-            )
-
-    formatter = _ProcessorFormatter()
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+        foreign_pre_chain=[
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            _add_correlation_id,
+        ],
+    )
 
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
