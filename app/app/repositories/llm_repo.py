@@ -48,7 +48,7 @@ class LLMRepository:
         messages = await self._generate_prompt(conversation_id, session)
         self._validate_request(messages)
 
-        logger.info(
+        logger.debug(
             "LLM REQUEST: model=%s conversation_id=%s messages=%s",
             self.model,
             conversation_id,
@@ -62,7 +62,7 @@ class LLMRepository:
         except (APIError, LLMResponseFailed) as exc:
             raise LLMResponseFailed(f"LLM request failed: {exc}") from exc
 
-        logger.info(
+        logger.debug(
             "LLM RESPONSE VALIDATED: conversation_id=%s topic=%s confidence=%s",
             conversation_id,
             validated.topic,

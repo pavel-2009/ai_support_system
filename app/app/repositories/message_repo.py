@@ -43,7 +43,7 @@ class MessageRepository:
             return None
 
         if sender_type == "ai" and conversation.status != Status.PENDING_AI:
-            logger.info("AI RESPONSE SKIPPED: conversation=%s status=%s", conversation_id, conversation.status)
+            logger.debug("ai_response_skipped", conversation_id=conversation_id, status=conversation.status)
             return None
 
         if sender_type == UserRole.OPERATOR.value:

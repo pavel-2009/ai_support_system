@@ -191,7 +191,7 @@ def ensure_conversation_access(current_user: User, conversation: Conversation) -
 def ensure_conversation_is_open(conversation: Conversation) -> None:
     """Проверить, что диалог открыт для чтения и работы."""
     if conversation.status == Status.CLOSED:
-        logger.info("Диалог %s закрыт, возвращаем 410.", conversation.id)
+        logger.debug("closed_conversation_access_rejected", conversation_id=conversation.id)
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Диалог закрыт.",

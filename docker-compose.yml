@@ -75,6 +75,7 @@ services:
       - "8001:8001"
     volumes:
       - ./app:/app
+      - ./logs/web:/app/logs
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/mydatabase
@@ -99,6 +100,7 @@ services:
     command: ["/bin/sh", "-c", "mkdir -p \"$$PROMETHEUS_MULTIPROC_DIR\" && rm -f \"$$PROMETHEUS_MULTIPROC_DIR\"/* && exec celery -A app.celery.celery_app:celery_app worker --loglevel=info"]
     volumes:
       - ./app:/app
+      - ./logs/celery:/app/logs
     environment:
       - PYTHONPATH=/app
       - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc
