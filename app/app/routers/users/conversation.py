@@ -43,8 +43,8 @@ async def create_conversation(
 @limiter.limit("100/minute", key_func=get_user_identifier)
 async def get_conversations(
     request: Request,
-    page: int = Query(default=1, ge=1, description="Номер страницы"),
-    size: int = Query(default=20, ge=1, le=100, description="Размер страницы"),
+    cursor: int | None = Query(default=None, ge=1, description="ID курсора"),
+    limit: int = Query(default=20, ge=1, le=100, description="Количество диалогов"),
     status_filter: Status | None = Query(default=None, alias="status"),
     priority_filter: Priority | None = Query(default=None, alias="priority"),
     channel_filter: Channel | None = Query(default=None, alias="channel"),
@@ -53,37 +53,28 @@ async def get_conversations(
     current_user: User = Depends(require_authenticated_user),
     conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationListResponse:
-    """Получить список диалогов с базовой фильтрацией и пагинацией."""
-    offset = (page - 1) * size
+    """Получить список диалогов с фильтрацией и курсорной пагинацией."""
     participant_id = None if current_user.role.value == "admin" else current_user.id
 
-    items = await conversation_service.list_conversations(
-        limit=size,
-        offset=offset,
+    items, next_cursor, has_more = await conversation_service.list_by_participant_with_cursor(
+        participant_id=participant_id,
+        limit=limit,
+        cursor=cursor,
         status_filter=status_filter,
         priority_filter=priority_filter,
         channel_filter=channel_filter,
         user_id_filter=user_id_filter,
         operator_id_filter=operator_id_filter,
-        participant_id=participant_id,
-    )
-    total = await conversation_service.count_conversations(
-        status_filter=status_filter,
-        priority_filter=priority_filter,
-        channel_filter=channel_filter,
-        user_id_filter=user_id_filter,
-        operator_id_filter=operator_id_filter,
-        participant_id=participant_id,
     )
 
     logger.info(
-        "Список диалогов запрошен пользователем %s: page=%s size=%s total=%s.",
+        "Список диалогов запрошен пользователем %s: cursor=%s limit=%s has_more=%s.",
         current_user.id,
-        page,
-        size,
-        total,
+        cursor,
+        limit,
+        has_more,
     )
-    return ConversationListResponse(items=items, total=total, page=page, size=size)
+    return ConversationListResponse(items=items, next_cursor=next_cursor, has_more=has_more)
 
 
 @router.post("/{conversation_id}/close", response_model=ConversationGet)
@@ -144,4 +135,3 @@ async def user_typing(
         "is_typing": bool(payload.get("is_typing", True)),
     })
     return {"status": "ok"}
-

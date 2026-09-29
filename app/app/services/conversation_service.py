@@ -67,6 +67,29 @@ class ConversationService:
             participant_id=participant_id,
         )
 
+    async def list_by_participant_with_cursor(
+        self,
+        participant_id: int | None,
+        limit: int,
+        cursor: int | None = None,
+        status_filter: Status | None = None,
+        priority_filter: Priority | None = None,
+        channel_filter: Channel | None = None,
+        user_id_filter: int | None = None,
+        operator_id_filter: int | None = None,
+    ) -> tuple[list[Conversation], int | None, bool]:
+        """Получить страницу диалогов участника по курсору ID."""
+        return await self.uow.conversation.list_by_participant_with_cursor(
+            participant_id=participant_id,
+            limit=limit,
+            cursor=cursor,
+            status_filter=status_filter,
+            priority_filter=priority_filter,
+            channel_filter=channel_filter,
+            user_id_filter=user_id_filter,
+            operator_id_filter=operator_id_filter,
+        )
+
     async def count_conversations(
         self,
         status_filter: Status | None = None,

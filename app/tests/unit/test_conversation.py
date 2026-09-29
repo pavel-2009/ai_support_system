@@ -48,6 +48,64 @@ class TestConversationRepository:
         assert not hasattr(repo, "back_to_ai")
 
     @pytest.mark.asyncio
+    async def test_list_by_participant_with_cursor_pages_in_descending_id_order(self, async_session):
+        from app.models.user import User
+        from app.repositories.conversation_repo import ConversationRepository
+
+        participant = User(
+            email="conv_cursor_user@test.com",
+            nickname="conv_cursor_user",
+            fullname="Conv Cursor User",
+            hashed_password="hash",
+        )
+        other_user = User(
+            email="conv_cursor_other@test.com",
+            nickname="conv_cursor_other",
+            fullname="Conv Cursor Other",
+            hashed_password="hash",
+        )
+        async_session.add_all([participant, other_user])
+        await async_session.commit()
+        await async_session.refresh(participant)
+        await async_session.refresh(other_user)
+
+        repo = ConversationRepository(async_session)
+        participant_conversations = [
+            await repo.create_conversation(participant.id, Priority.MEDIUM, Channel.API)
+            for _ in range(3)
+        ]
+        await repo.create_conversation(other_user.id, Priority.MEDIUM, Channel.API)
+
+        first_items, next_cursor, has_more = await repo.list_by_participant_with_cursor(
+            participant_id=participant.id,
+            limit=2,
+        )
+        assert [item.id for item in first_items] == [
+            participant_conversations[2].id,
+            participant_conversations[1].id,
+        ]
+        assert next_cursor == participant_conversations[1].id
+        assert has_more is True
+
+        second_items, next_cursor, has_more = await repo.list_by_participant_with_cursor(
+            participant_id=participant.id,
+            limit=2,
+            cursor=next_cursor,
+        )
+        assert [item.id for item in second_items] == [participant_conversations[0].id]
+        assert next_cursor is None
+        assert has_more is False
+
+        empty_items, next_cursor, has_more = await repo.list_by_participant_with_cursor(
+            participant_id=participant.id,
+            limit=2,
+            cursor=participant_conversations[0].id,
+        )
+        assert empty_items == []
+        assert next_cursor is None
+        assert has_more is False
+
+    @pytest.mark.asyncio
     async def test_repo_active_queue_sorted_by_priority(self, async_session):
         from app.models.user import User
         from app.repositories.conversation_repo import ConversationRepository
@@ -229,7 +287,7 @@ class TestConversationRouter:
         loaded_after_close = client.get(f"/api/conversations/{conversation_id}", headers=headers)
         assert loaded_after_close.status_code == 410
 
-    def test_get_conversations_filters_and_pagination(self, client, create_test_user):
+    def test_get_conversations_filters_and_cursor_pagination(self, client, create_test_user):
         create_test_user(email="conv_list_owner@example.com", password="TestPass123!", nickname="convlistowner")
 
         login_response = client.post(
@@ -241,14 +299,58 @@ class TestConversationRouter:
         client.post("/api/conversations/", headers=headers, json={"priority": "high", "channel": "api"})
         client.post("/api/conversations/", headers=headers, json={"priority": "low", "channel": "web"})
 
-        response = client.get("/api/conversations/?page=1&size=1&priority=high", headers=headers)
+        response = client.get("/api/conversations/?limit=1&priority=high", headers=headers)
         assert response.status_code == 200
         payload = response.json()
-        assert payload["page"] == 1
-        assert payload["size"] == 1
-        assert payload["total"] >= 1
+        assert "page" not in payload
+        assert "size" not in payload
+        assert "total" not in payload
         assert len(payload["items"]) == 1
         assert payload["items"][0]["priority"] == "high"
+        assert payload["next_cursor"] is None
+        assert payload["has_more"] is False
+
+    def test_get_conversations_cursor_pages_and_empty_result(self, client, create_test_user):
+        create_test_user(
+            email="conv_cursor_api@example.com",
+            password="TestPass123!",
+            nickname="convcursorapi",
+        )
+        login_response = client.post(
+            "/api/auth/login",
+            json={"email": "conv_cursor_api@example.com", "password": "TestPass123!"},
+        )
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        for _ in range(3):
+            created = client.post(
+                "/api/conversations/",
+                headers=headers,
+                json={"priority": "medium", "channel": "api"},
+            )
+            assert created.status_code == 201
+
+        first_page = client.get("/api/conversations/?limit=2", headers=headers)
+        assert first_page.status_code == 200
+        first_payload = first_page.json()
+        assert len(first_payload["items"]) == 2
+        assert first_payload["items"][0]["id"] > first_payload["items"][1]["id"]
+        assert first_payload["next_cursor"] == first_payload["items"][-1]["id"]
+        assert first_payload["has_more"] is True
+
+        second_page = client.get(
+            f"/api/conversations/?limit=2&cursor={first_payload['next_cursor']}",
+            headers=headers,
+        )
+        assert second_page.status_code == 200
+        second_payload = second_page.json()
+        assert len(second_payload["items"]) == 1
+        assert second_payload["items"][0]["id"] < first_payload["items"][-1]["id"]
+        assert second_payload["next_cursor"] is None
+        assert second_payload["has_more"] is False
+
+        invalid_cursor = client.get("/api/conversations/?cursor=0", headers=headers)
+        assert invalid_cursor.status_code == 422
 
     def test_forbidden_access_to_foreign_conversation(self, client, create_test_user):
         create_test_user(email="conv_owner@example.com", password="TestPass123!", nickname="convowner2")

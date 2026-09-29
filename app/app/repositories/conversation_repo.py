@@ -80,6 +80,47 @@ class ConversationRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_participant_with_cursor(
+        self,
+        participant_id: int | None,
+        limit: int,
+        cursor: int | None = None,
+        status_filter: Status | None = None,
+        priority_filter: Priority | None = None,
+        channel_filter: Channel | None = None,
+        user_id_filter: int | None = None,
+        operator_id_filter: int | None = None,
+    ) -> tuple[list[Conversation], int | None, bool]:
+        """Получить страницу диалогов участника по курсору ID."""
+        query = select(Conversation)
+
+        if participant_id is not None:
+            query = query.where(
+                (Conversation.user_id == participant_id)
+                | (Conversation.operator_id == participant_id)
+            )
+        if status_filter is not None:
+            query = query.where(Conversation.status == status_filter)
+        if priority_filter is not None:
+            query = query.where(Conversation.priority == priority_filter)
+        if channel_filter is not None:
+            query = query.where(Conversation.channel == channel_filter)
+        if user_id_filter is not None:
+            query = query.where(Conversation.user_id == user_id_filter)
+        if operator_id_filter is not None:
+            query = query.where(Conversation.operator_id == operator_id_filter)
+        if cursor is not None:
+            query = query.where(Conversation.id < cursor)
+
+        result = await self.session.execute(
+            query.order_by(Conversation.id.desc()).limit(limit + 1)
+        )
+        rows = list(result.scalars().all())
+        has_more = len(rows) > limit
+        items = rows[:limit]
+        next_cursor = items[-1].id if has_more else None
+        return items, next_cursor, has_more
+
     async def count_conversations(
         self,
         status_filter: Status | None = None,

@@ -44,9 +44,8 @@ class ConversationUpdate(BaseModel):
 
 
 class ConversationListResponse(BaseModel):
-    """Ответ со списком диалогов и базовой пагинацией."""
+    """Ответ со списком диалогов и курсорной пагинацией."""
 
     items: list[ConversationGet] = Field(default_factory=list)
-    total: int = Field(..., ge=0)
-    page: int = Field(..., ge=1)
-    size: int = Field(..., ge=1)
+    next_cursor: int | None = Field(None, description="ID для загрузки следующей страницы")
+    has_more: bool = Field(..., description="Есть ли следующая страница")
