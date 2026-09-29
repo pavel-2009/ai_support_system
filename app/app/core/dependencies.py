@@ -3,12 +3,13 @@
 from fastapi import Depends, HTTPException, Path, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
 from collections.abc import AsyncIterator
-from redis import Redis
+from redis.asyncio import Redis
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis_client
 from app.core.security import verify_access_token
 from app.core.uow import UnitOfWork
+from app.core.cache import Cache
 from app.db import async_session
 from app.models.conversation import Conversation, Status
 from app.models.user import User
@@ -231,3 +232,9 @@ def get_idempotency_key(
             detail="Idempotency-Key слишком длинный.",
         )
     return key
+
+
+def get_cache(
+    redis: Redis = Depends(get_redis_client)
+) -> Cache:
+    return Cache(redis)
