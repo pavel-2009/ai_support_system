@@ -114,10 +114,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                 if conversation is None or conversation.status != Status.PENDING_AI:
                     logger.info("LLM PIPELINE SKIPPED: conversation_id=%s is no longer awaiting AI", conversation_id)
                     return
-            logger.info(
-                "LLM PIPELINE: generating response for conversation_id=%s",
-                conversation_id,
-            )
+            logger.info("llm_generation_started", conversation_id=conversation_id)
             llm_service = LLMService(LLMRepository())
             cache = Cache(redis_client)
             message_service = MessageService(uow, cache)
@@ -128,11 +125,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     conversation_id,
                     uow.session,
                 )
-            logger.info(
-                "LLM PIPELINE: validated response conversation_id=%s confidence=%s",
-                conversation_id,
-                response.confidence,
-            )
+            logger.info("llm_response_validated", conversation_id=conversation_id, confidence=response.confidence)
 
             if response.confidence >= settings.LLM_AI_CONFIDENCE_THRESHOLD:
                 message = await message_service.create_message(
@@ -144,10 +137,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     confidence=response.confidence,
                     needs_review=False,
                 )
-                logger.info(
-                    "LLM PIPELINE: AI message persisted id=%s",
-                    getattr(message, "id", None),
-                )
+                logger.info("ai_message_persisted", conversation_id=conversation_id, message_id=getattr(message, "id", None))
                 return
 
             if response.confidence >= settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD:
@@ -160,16 +150,10 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     confidence=response.confidence,
                     needs_review=True,
                 )
-                logger.info(
-                    "LLM PIPELINE: review message persisted id=%s",
-                    getattr(message, "id", None),
-                )
+                logger.info("ai_message_persisted_for_review", conversation_id=conversation_id, message_id=getattr(message, "id", None))
                 return
 
-            logger.info(
-                "LLM PIPELINE: confidence too low; escalating conversation_id=%s",
-                conversation_id,
-            )
+            logger.info("llm_escalation_required", conversation_id=conversation_id, confidence=response.confidence)
             await conversation_service.escalate(conversation_id)
     finally:
         try:
