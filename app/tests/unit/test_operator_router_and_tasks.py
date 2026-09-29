@@ -176,23 +176,26 @@ class TestLLMTasks:
         uow_context = MagicMock()
         uow_context.__aenter__ = AsyncMock(return_value=uow)
         uow_context.__aexit__ = AsyncMock(return_value=False)
+        redis_client = SimpleNamespace(aclose=AsyncMock())
 
-        with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
-            with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
-                with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
-                    with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
-                        llm_service_cls.return_value.generate_response = AsyncMock(return_value=fake_response)
-                        message_service = message_service_cls.return_value
-                        message_service.create_message = AsyncMock()
-                        conversation_service = conversation_service_cls.return_value
-                        conversation_service.escalate = AsyncMock()
-                        from app.celery.tasks.llm_tasks import _process_llm_task_async
-                        await _process_llm_task_async(conversation_id=42)
+        with patch("app.celery.tasks.llm_tasks.create_redis_client", return_value=redis_client):
+            with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
+                with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
+                    with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
+                        with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
+                            llm_service_cls.return_value.generate_response = AsyncMock(return_value=fake_response)
+                            message_service = message_service_cls.return_value
+                            message_service.create_message = AsyncMock()
+                            conversation_service = conversation_service_cls.return_value
+                            conversation_service.escalate = AsyncMock()
+                            from app.celery.tasks.llm_tasks import _process_llm_task_async
+                            await _process_llm_task_async(conversation_id=42)
 
         message_service.create_message.assert_awaited_once()
         kwargs = message_service.create_message.await_args.kwargs
         assert kwargs["needs_review"] is False
         conversation_service.escalate.assert_not_awaited()
+        redis_client.aclose.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_process_async_escalates_on_low_confidence(self):

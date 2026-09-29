@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.celery.celery_app import celery_app
 from app.core.config import settings
 from app.core.cache import Cache
-from app.core.redis import get_redis_client
+from app.core.redis import create_redis_client
 from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
@@ -104,6 +104,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
         database_engine,
         expire_on_commit=False,
     )
+    redis_client = create_redis_client()
 
     try:
         async with UnitOfWork(session_factory) as uow:
@@ -118,7 +119,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                 conversation_id,
             )
             llm_service = LLMService(LLMRepository())
-            cache = Cache(get_redis_client())
+            cache = Cache(redis_client)
             message_service = MessageService(uow, cache)
             conversation_service = ConversationService(uow, cache)
 
@@ -171,8 +172,11 @@ async def _process_llm_task_async(conversation_id: int) -> None:
             )
             await conversation_service.escalate(conversation_id)
     finally:
-        await database_engine.dispose()
-        logger.debug(
-            "CELERY DB ENGINE DISPOSED: conversation_id=%s",
-            conversation_id,
-        )
+        try:
+            await redis_client.aclose()
+        finally:
+            await database_engine.dispose()
+            logger.debug(
+                "CELERY DB ENGINE DISPOSED: conversation_id=%s",
+                conversation_id,
+            )
