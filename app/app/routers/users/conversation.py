@@ -31,7 +31,7 @@ async def create_conversation(
     conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationGet:
     """Создать новый диалог."""
-    logger.info("Пользователь %s создаёт новый диалог.", current_user.id)
+    logger.debug("conversation_create_requested", user_id=current_user.id)
     return await conversation_service.create_conversation(
         user_id=current_user.id,
         priority=conversation_data.priority,
