@@ -208,6 +208,32 @@ class TestMessageRouter:
         assert len(listed.json()) == 1
         assert listed.json()[0]["sender_id"] > 0
 
+    def test_send_message_enqueues_llm_with_cached_conversation(self, client, create_test_user):
+        email = f"msg_cached_owner_{uuid4().hex[:8]}@example.com"
+        create_test_user(email=email, password="TestPass123!", nickname=f"msg_cached_owner_{uuid4().hex[:8]}")
+
+        login = client.post("/api/auth/login", json={"email": email, "password": "TestPass123!"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        conversation = client.post(
+            "/api/conversations/",
+            headers=headers,
+            json={"priority": "low", "channel": "web"},
+        )
+        conversation_id = conversation.json()["id"]
+
+        cached_messages = client.get(f"/api/conversations/{conversation_id}/messages", headers=headers)
+        assert cached_messages.status_code == 200
+
+        with patch("app.routers.users.message.process_llm_task.delay") as enqueue:
+            sent = client.post(
+                f"/api/conversations/{conversation_id}/messages",
+                headers=headers,
+                json={"content": "Проверьте запуск AI"},
+            )
+
+        assert sent.status_code == 201
+        enqueue.assert_called_once()
+
     def test_get_messages_closed_conversation_returns_410(self, client, create_test_user):
         owner_email = f"msg_closed_owner_{uuid4().hex[:8]}@example.com"
         create_test_user(email=owner_email, password="TestPass123!", nickname=f"msg_closed_owner_{uuid4().hex[:8]}")

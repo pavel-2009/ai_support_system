@@ -157,9 +157,10 @@ async def get_conversation_service(
 
 async def get_message_service(
     uow: UnitOfWork = Depends(get_uow),
+    cache: Cache = Depends(get_cache),
 ) -> MessageService:
     """Зависимость для получения сервиса работы с сообщениями."""
-    return MessageService(uow)
+    return MessageService(uow, cache)
 
 
 async def get_llm_service() -> LLMService:

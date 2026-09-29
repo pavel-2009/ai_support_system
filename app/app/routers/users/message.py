@@ -112,7 +112,7 @@ async def send_message(
         raise
 
     # Operator-owned conversations never restart the AI after a customer reply.
-    if conversation.status == Status.PENDING_AI:
+    if await message_service.get_conversation_status(conversation.id) == Status.PENDING_AI:
         logger.info(
             "message_created",
             message_id=new_message.id,

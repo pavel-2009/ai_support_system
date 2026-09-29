@@ -1,8 +1,11 @@
 """Сервис для работы с сообщениями."""
 
 from app.core.logging import get_logger
+from app.core.cache import Cache
+from app.core.config import settings
 from app.core.uow import UnitOfWork
 from app.domain.events import ConversationMarkedForReview, MessageSent
+from app.models.conversation import Status
 from app.models.user import UserRole
 
 
@@ -12,8 +15,17 @@ logger = get_logger(__name__)
 class MessageService:
     """Сервис для работы с сообщениями."""
 
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, cache: Cache | None = None):
         self.uow = uow
+        self.cache = cache
+
+    async def get_conversation_status(self, conversation_id: int) -> Status | None:
+        conversation = await self.uow.conversation.get_conversation_by_id(conversation_id)
+        return conversation.status if conversation is not None else None
+
+    async def _invalidate_conversation_cache(self, conversation_id: int) -> None:
+        if self.cache is not None:
+            await self.cache.delete(f"{settings.CONVERSATION_CACHE_KEY_PREFIX}{conversation_id}")
 
     async def create_message(
         self,
@@ -57,22 +69,26 @@ class MessageService:
                     sender_id,
                 )
                 return None
+            await self._invalidate_conversation_cache(conversation_id)
 
         if sender_type == UserRole.USER.value:
             updated_conversation = await self.uow.state_machine.user_replied(conversation_id)
             if updated_conversation is None:
                 logger.warning("MESSAGE SERVICE USER REPLY STATE UPDATE REJECTED: conversation_id=%s", conversation_id)
                 return None
+            await self._invalidate_conversation_cache(conversation_id)
 
         if sender_type == "ai" and not needs_review:
             updated_conversation = await self.uow.state_machine.ai_replied(conversation_id)
             if updated_conversation is None:
                 logger.info("AI RESPONSE STATE UPDATE SKIPPED: conversation_id=%s", conversation_id)
                 return None
+            await self._invalidate_conversation_cache(conversation_id)
 
         if needs_review:
             updated_conversation = await self.uow.state_machine.mark_for_review(conversation_id)
             if updated_conversation is not None:
+                await self._invalidate_conversation_cache(conversation_id)
                 self.uow.add_event(ConversationMarkedForReview(str(conversation_id)))
 
         self.uow.add_event(MessageSent(str(new_message.id), str(conversation_id)))

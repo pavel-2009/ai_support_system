@@ -118,8 +118,9 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                 conversation_id,
             )
             llm_service = LLMService(LLMRepository())
-            message_service = MessageService(uow)
-            conversation_service = ConversationService(uow, Cache(get_redis_client()))
+            cache = Cache(get_redis_client())
+            message_service = MessageService(uow, cache)
+            conversation_service = ConversationService(uow, cache)
 
             with llm_latency_seconds.time():
                 response: LLMResponse = await llm_service.generate_response(
