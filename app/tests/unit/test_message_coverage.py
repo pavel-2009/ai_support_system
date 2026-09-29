@@ -450,7 +450,11 @@ class TestConversationStateMachineCoverage:
         result = await machine.user_replied(waiting.id)
         assert result.status == Status.WAITING_FOR_OPERATOR
 
-        invalid = await _conversation(async_session, owner, Status.WAITING_FOR_USER)
+        waiting_without_operator = await _conversation(async_session, owner, Status.WAITING_FOR_USER)
+        result = await machine.user_replied(waiting_without_operator.id)
+        assert result.status == Status.PENDING_AI
+
+        invalid = await _conversation(async_session, owner, Status.WAITING_FOR_OPERATOR)
         assert await machine.user_replied(invalid.id) is None
 
     @pytest.mark.asyncio

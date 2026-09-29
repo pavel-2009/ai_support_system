@@ -195,15 +195,18 @@ class ConversationStateMachine:
         return conversation
 
     async def user_replied(self, conversation_id: int) -> Conversation | None:
-        """Advance a customer reply without handing an operator chat back to AI."""
+        """Advance a customer reply and send the conversation back to AI when it is no longer owned by an operator."""
         conversation = await self._get_conversation(conversation_id)
         if conversation is None:
             return None
 
         if conversation.status == Status.OPEN:
             next_status = Status.PENDING_AI
-        elif conversation.status == Status.WAITING_FOR_USER and conversation.operator_id is not None:
-            next_status = Status.WAITING_FOR_OPERATOR
+        elif conversation.status == Status.WAITING_FOR_USER:
+            if conversation.operator_id is None:
+                next_status = Status.PENDING_AI
+            else:
+                next_status = Status.WAITING_FOR_OPERATOR
         else:
             return None
 
