@@ -42,6 +42,7 @@ class LLMRepository:
     async def _generate_response(
         self,
         messages: list[dict[str, str]],
+        conversation_id: int | None = None,
     ) -> LLMResponse:
         """Выполнить один запрос к LLM и строго проверить его результат."""
         self._validate_request(messages)
@@ -230,6 +231,7 @@ class LLMRepository:
     async def request_response(
         self,
         messages: list[dict[str, str]],
+        conversation_id: int | None = None,
     ) -> LLMResponse:
         """Выполнить LLM-запрос без удержания DB session."""
-        return await self._generate_response(messages)
+        return await self._generate_response(messages, conversation_id=conversation_id)
