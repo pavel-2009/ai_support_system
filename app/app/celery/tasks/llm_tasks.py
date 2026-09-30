@@ -28,7 +28,6 @@ from app.models.conversation import Status
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
 from app.services.conversation_service import ConversationService
-from app.services.llm_service import LLMService
 from app.services.message_service import MessageService
 
 
