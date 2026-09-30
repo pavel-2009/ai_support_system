@@ -2,7 +2,7 @@
 
 Бэкенд-система поддержки пользователей с AI-ассистентом и операторской очередью (аналог helpdesk-платформ).
 
-Проект реализован на **FastAPI + SQLAlchemy (async) + Celery + Redis + PostgreSQL**, с JWT-аутентификацией, ролями пользователей и асинхронной обработкой сообщений через LLM.
+Проект построен вокруг **FastAPI + SQLAlchemy 2.x (async) + PostgreSQL + Redis + Celery + LLM**, с JWT-аутентификацией, ролями пользователей, операторским workflow, кэшированием, идемпотентностью, rate limiting и observability через Prometheus, Grafana и Jaeger.
 
 ---
 
@@ -37,17 +37,37 @@
 
 ```text
 app/
-├─ main.py                    # Точка входа FastAPI, middleware, health/metrics
+├─ main.py                    # FastAPI entrypoint, middleware, health/metrics
 ├─ app/
-│  ├─ core/                   # Конфиг, безопасность, зависимости, логирование
-│  ├─ models/                 # SQLAlchemy-модели
-│  ├─ schemas/                # Pydantic-схемы API
-│  ├─ repositories/           # Доступ к данным и LLM client adapter
-│  ├─ services/               # Бизнес-логика
-│  ├─ routers/                # HTTP-роутеры (users, conversations, operator)
-│  └─ celery/tasks/           # Фоновые LLM-задачи
-├─ alembic/                   # Миграции БД
-└─ tests/                     # Unit + E2E тесты
+│  ├─ core/                   # infrastructure: config, security, cache, UoW,
+│  │                          # events, idempotency, rate limit, logging,
+│  │                          # metrics, correlation, telemetry, WebSocket
+│  ├─ domain/                 # domain events
+│  ├─ models/                 # SQLAlchemy models
+│  ├─ schemas/                # Pydantic API schemas
+│  ├─ repositories/           # persistence + LLM adapter
+│  ├─ services/               # business logic
+│  ├─ routers/                # user and operator HTTP API
+│  └─ celery/tasks/           # background LLM processing
+├─ alembic/                   # PostgreSQL migrations
+├─ tests/
+│  ├─ unit/
+│  ├─ e2e/
+│  └─ performance/
+├─ locustfile.py              # load testing
+└─ prometheus.yml             # Prometheus config
+
+frontend/
+├─ src/
+│  ├─ components/             # user/operator/admin UI
+│  ├─ hooks/                  # auth and operator WebSocket hooks
+│  └─ api/                    # API client
+├─ Dockerfile
+└─ vite.config.js
+
+grafana/
+├─ dashboards/
+└─ provisioning/
 ```
 
 ---
@@ -135,6 +155,73 @@ LLM-запрос выполняется **один раз**. Ошибка зап
 
 ---
 
+## Проблема с PostgreSQL под нагрузкой
+
+Во время нагрузочного тестирования на 100 пользователей с `10 users/s` в течение 5 минут обнаружился bottleneck вокруг DB connection pool и lifecycle SQLAlchemy session в Celery.
+
+Наблюдались рост P95/P99 latency и большое количество HTTP 500 при отправке сообщений. 500 также появлялись на части операций получения и создания диалогов. При этом отдельные обычные SQL-запросы выполнялись значительно быстрее полного request pipeline.
+
+### Причина
+
+Старая схема Celery держала Unit of Work во время ожидания LLM:
+
+```text
+open UnitOfWork
+      │
+      ├─ DB query: история диалога
+      │
+      ├─ await LLM request  ← долгое сетевое ожидание
+      │
+      └─ DB write
+close UnitOfWork
+```
+
+То есть lifecycle DB session/transaction охватывал не только работу с БД, но и внешний LLM I/O. При большом количестве параллельных задач это увеличивало время удержания DB resources. При исчерпании pool новые операции могли ждать до `pool_timeout`, а затем получать ошибку SQLAlchemy.
+
+**Важно:** увеличение pool само по себе проблему не исправляет — оно только увеличивает запас по числу соединений.
+
+### Как решаем
+
+Celery pipeline разделён на две короткие DB-фазы:
+
+```text
+Phase 1
+┌─────────────────────────────┐
+│ DB session                  │
+│ - проверить conversation    │
+│ - получить history/prompt   │
+└──────────────┬──────────────┘
+               │ session closed
+               ▼
+        ┌───────────────┐
+        │ LLM request   │
+        │ без DB session│
+        └───────┬───────┘
+                │ response
+                ▼
+Phase 2
+┌─────────────────────────────┐
+│ новая DB session            │
+│ - сохранить AI message      │
+│ - изменить status/escalate  │
+└─────────────────────────────┘
+```
+
+Дополнительно pool увеличен:
+
+```text
+pool_size:    20 → 30
+max_overflow: 10 → 20
+pool_timeout: 30s
+pool_pre_ping: enabled
+pool_recycle: 3600s
+```
+
+Основной фикс — **не удерживать DB transaction во время LLM I/O**.
+
+Текущий фикс намеренно минимальный. В Celery-задаче пока создаётся отдельный SQLAlchemy engine/pool на выполнение task и затем освобождается. Следующим отдельным этапом нужно оптимизировать lifecycle engine/pool на уровне Celery worker и отдельно настроить LLM/Celery concurrency.
+
+---
 ## Конфигурация и переменные окружения
 
 Основные переменные (из `Settings`):
@@ -258,6 +345,23 @@ alembic upgrade head
 cd app
 pytest --cov=app --cov-report=term-missing
 ```
+
+## Нагрузочное тестирование
+
+Для нагрузочных тестов используется Locust (`app/locustfile.py`). Например:
+
+```bash
+RATE_LIMIT_OVERRIDE=10000/minute docker compose up -d --build
+locust -f locustfile.py \
+  --host http://localhost:8001 \
+  --headless \
+  --users 100 \
+  --spawn-rate 10 \
+  --run-time 5m \
+  --csv=tests/performance/results
+```
+
+Результаты сохраняются в `app/tests/performance/`.
 
 ---
 
