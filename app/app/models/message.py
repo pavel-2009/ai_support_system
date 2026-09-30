@@ -13,7 +13,7 @@ class Message(Base):
 
     __tablename__ = "messages"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     sender_type = Column(String, nullable=False)
     # AI messages do not have a corresponding user row, so sender_id is nullable.
