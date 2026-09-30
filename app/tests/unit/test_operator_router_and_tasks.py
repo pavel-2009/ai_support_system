@@ -180,10 +180,11 @@ class TestLLMTasks:
 
         with patch("app.celery.tasks.llm_tasks.create_redis_client", return_value=redis_client):
             with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
-                with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
+                with patch("app.celery.tasks.llm_tasks.LLMRepository") as llm_repo_cls:
                     with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                         with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
-                            llm_service_cls.return_value.generate_response = AsyncMock(return_value=fake_response)
+                            llm_repo_cls.return_value.get_prompt = AsyncMock(return_value=[{"role": "system", "content": "test"}])
+                            llm_repo_cls.return_value.request_response = AsyncMock(return_value=fake_response)
                             message_service = message_service_cls.return_value
                             message_service.create_message = AsyncMock()
                             conversation_service = conversation_service_cls.return_value
@@ -209,7 +210,8 @@ class TestLLMTasks:
             with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
                 with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                     with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
-                        llm_service_cls.return_value.generate_response = AsyncMock(return_value=fake_response)
+                        llm_repo_cls.return_value.get_prompt = AsyncMock(return_value=[{"role": "system", "content": "test"}])
+                        llm_repo_cls.return_value.request_response = AsyncMock(return_value=fake_response)
                         message_service = message_service_cls.return_value
                         message_service.create_message = AsyncMock()
                         conversation_service = conversation_service_cls.return_value
