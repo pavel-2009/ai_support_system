@@ -1,9 +1,10 @@
 """API rate limiter for app protection."""
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+import os
 
 from fastapi import Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.security import verify_access_token
 
@@ -20,6 +21,11 @@ def get_user_identifier(request: Request) -> str:
             return str(user_id)
 
     return get_remote_address(request)
+
+
+def rate_limit(default: str) -> str:
+    """Return a configured load-test override or the production limit."""
+    return os.getenv("RATE_LIMIT_OVERRIDE", default)
 
 
 limiter = Limiter(key_func=get_user_identifier, default_limits=["100/minute"])
