@@ -21,8 +21,8 @@ def create_database_engine(database_url: str) -> AsyncEngine:
     """Создать async engine с диагностикой SQL-запросов и connection pooling."""
     database_engine = create_async_engine(
         database_url,
-        pool_size=20,
-        max_overflow=10,
+        pool_size=30,
+        max_overflow=20,
         pool_timeout=30,
         pool_recycle=3600,
         pool_pre_ping=True,
