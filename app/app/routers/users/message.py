@@ -17,7 +17,7 @@ from app.core.dependencies import (
 )
 from app.core.idempotency import IdempotencyKey
 from app.core.logging import get_logger
-from app.core.rate_limit import get_user_identifier, limiter
+from app.core.rate_limit import get_user_identifier, limiter, rate_limit
 from app.models.conversation import Conversation, Status
 from app.models.message import Message
 from app.models.user import User
@@ -44,7 +44,7 @@ def make_fingerprint(message: MessageCreate) -> str:
     status_code=status.HTTP_201_CREATED,
     summary="Создать новое сообщение в беседе",
 )
-@limiter.limit("10000/minute", key_func=get_user_identifier)
+@limiter.limit(rate_limit("30/minute"), key_func=get_user_identifier)
 async def send_message(
     request: Request,
     message: MessageCreate,
