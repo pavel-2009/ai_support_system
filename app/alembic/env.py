@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import settings
 from app.db import Base
 from app.models.user import User, UserRole  # noqa: F401
-from app.models.conversation import (  # noqa: F401
+from app.models.message import Message  # noqa: F401
+from app.models.conversation import (
     AuditLog,
     Channel,
     Conversation,
