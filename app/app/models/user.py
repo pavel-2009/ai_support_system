@@ -21,10 +21,10 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    nickname = Column(String, unique=True, index=True, nullable=False)
-    fullname = Column(String, unique=True, index=True, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
+    id = Column(Integer, primary_key=True)
+    nickname = Column(String, unique=True, nullable=False)
+    fullname = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(SqlEnum(UserRole), default=UserRole.USER, nullable=False)
     active_conversations_count = Column(Integer, nullable=False, default=0)
