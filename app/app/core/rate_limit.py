@@ -25,7 +25,8 @@ def get_user_identifier(request: Request) -> str:
 
 def rate_limit(default: str) -> str:
     """Return a configured load-test override or the production limit."""
-    return os.getenv("RATE_LIMIT_OVERRIDE", default)
+    override = os.getenv("RATE_LIMIT_OVERRIDE")
+    return override or default
 
 
 limiter = Limiter(key_func=get_user_identifier, default_limits=["100/minute"])
