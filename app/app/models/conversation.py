@@ -68,7 +68,7 @@ class ConversationOperatorLink(Base):
 
     __tablename__ = "conversation_operator_links"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     operator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -79,7 +79,12 @@ class ConversationOperatorLink(Base):
     operator = relationship("User", back_populates="conversation_links")
 
     __table_args__ = (
-        Index("idx_conversation_operator_active", "conversation_id", "operator_id", "is_active"),
+        Index(
+            "idx_conversation_operator_active",
+            "conversation_id",
+            "operator_id",
+            "is_active",
+        ),
     )
 
 
