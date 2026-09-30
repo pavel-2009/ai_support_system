@@ -35,7 +35,7 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     operator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(SqlEnum(Status), nullable=False, default=Status.OPEN)
@@ -56,7 +56,11 @@ class Conversation(Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (Index("idx_status_priority", "status", "priority"),)
+    __table_args__ = (
+        Index("idx_status_priority", "status", "priority"),
+        Index("idx_user_id_id", "user_id", "id"),
+        Index("idx_operator_id_id", "operator_id", "id"),
+    )
 
 
 class ConversationOperatorLink(Base):
