@@ -107,7 +107,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
     redis_client = create_redis_client()
 
     try:
-        llm_service = LLMService(LLMRepository())
+        llm_repo = LLMRepository()
         cache = Cache(redis_client)
 
         # Phase 1: read conversation state and prompt, then release the DB session.
@@ -122,7 +122,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     )
                     return
 
-            messages = await llm_service.llm_repo.get_prompt(
+            messages = await llm_repo.get_prompt(
                 conversation_id,
                 uow.session,
             )
@@ -131,7 +131,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
 
         # No DB session/transaction is held while waiting for the LLM.
         with llm_latency_seconds.time():
-            response: LLMResponse = await llm_service.llm_repo.request_response(messages)
+            response: LLMResponse = await llm_repo.request_response(messages)
 
         logger.info(
             "llm_response_validated",
