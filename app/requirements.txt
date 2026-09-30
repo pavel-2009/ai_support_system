@@ -41,6 +41,7 @@ pytest-asyncio==1.3.0
 httpx==0.28.1
 pytest-cov==7.1.0
 greenlet>=3.0.0
+locust==2.46.6
 
 # === LLM Client ===
 openai==2.32.0
