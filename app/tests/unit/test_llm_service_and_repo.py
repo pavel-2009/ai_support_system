@@ -173,7 +173,7 @@ class TestLLMRepositoryResponses:
                 {"role": "user", "content": "Q"},
             ]),
         ):
-            result = await repo._generate_response(messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}])
+            result = await repo._generate_response(\n                messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}],\n                conversation_id=9,\n            )
 
         assert result == LLMResponse(answer="A", confidence=0.77, topic="support")
         call_kwargs = repo.client.chat.completions.create.call_args.kwargs
@@ -200,7 +200,7 @@ class TestLLMRepositoryResponses:
             ]),
         ):
             with pytest.raises(LLMResponseFailed, match="invalid JSON"):
-                await repo._generate_response(messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}])
+                await repo._generate_response(\n                messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}],\n                conversation_id=9,\n            )
 
         repo.client.chat.completions.create.assert_awaited_once()
 
@@ -224,7 +224,7 @@ class TestLLMRepositoryResponses:
             ]),
         ):
             with pytest.raises(LLMResponseFailed, match="validation failed"):
-                await repo._generate_response(messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}])
+                await repo._generate_response(\n                messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}],\n                conversation_id=9,\n            )
 
     @pytest.mark.asyncio
     @patch("app.repositories.llm_repo.AsyncOpenAI")
@@ -246,7 +246,7 @@ class TestLLMRepositoryResponses:
             ]),
         ):
             with pytest.raises(LLMResponseFailed, match="validation failed"):
-                await repo._generate_response(messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}])
+                await repo._generate_response(\n                messages=[{"role": "system", "content": "prompt"}, {"role": "user", "content": "Q"}],\n                conversation_id=9,\n            )
 
     @pytest.mark.asyncio
     @patch("app.repositories.llm_repo.AsyncOpenAI")
