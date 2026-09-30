@@ -130,7 +130,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
 
         # No DB session/transaction is held while waiting for the LLM.
         with llm_latency_seconds.time():
-            response: LLMResponse = await llm_repo.request_response(messages)
+            response: LLMResponse = await llm_repo.request_response(messages, conversation_id=conversation_id)
 
         logger.info(
             "llm_response_validated",
