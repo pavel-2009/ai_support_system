@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from app.core.dependencies import get_user_service, require_authenticated_user
 from app.core.logging import get_logger
-from app.core.rate_limit import limiter, get_user_identifier
+from app.core.rate_limit import get_user_identifier, limiter, rate_limit
 from app.models.user import User
 from app.schemas.token import RefreshTokenRequest, SessionInfo, Token
 from app.schemas.user import UserCreate, UserGet, UserLogin, UserUpdate
@@ -110,7 +110,7 @@ async def delete_user(
 
 
 @auth_router.post("/register", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Регистрация")
-@limiter.limit("10000/minute", key_func=get_user_identifier)
+@limiter.limit(rate_limit("3/minute"), key_func=get_user_identifier)
 async def register_user(
     request: Request,
     data: UserCreate,
@@ -125,7 +125,7 @@ async def register_user(
 
 
 @auth_router.post("/login", response_model=Token, summary="Логин пользователя")
-@limiter.limit("10000/minute", key_func=get_user_identifier)
+@limiter.limit(rate_limit("5/minute"), key_func=get_user_identifier)
 async def login_user(
     request: Request,
     user_service: UserService = Depends(get_user_service),
