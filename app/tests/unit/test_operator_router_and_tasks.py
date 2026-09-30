@@ -231,7 +231,7 @@ class TestLLMTasks:
         uow_context.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.celery.tasks.llm_tasks.UnitOfWork", return_value=uow_context):
-            with patch("app.celery.tasks.llm_tasks.LLMService") as llm_service_cls:
+            with patch("app.celery.tasks.llm_tasks.LLMRepository") as llm_repo_cls:
                 with patch("app.celery.tasks.llm_tasks.MessageService") as message_service_cls:
                     with patch("app.celery.tasks.llm_tasks.ConversationService") as conversation_service_cls:
                         llm_repo_cls.return_value.get_prompt = AsyncMock(return_value=[{"role": "system", "content": "test"}])
