@@ -28,7 +28,6 @@ from app.models.conversation import Status
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
 from app.services.conversation_service import ConversationService
-from app.services.llm_service import LLMService
 from app.services.message_service import MessageService
 
 
@@ -98,7 +97,7 @@ def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> s
 
 
 async def _process_llm_task_async(conversation_id: int) -> None:
-    """Асинхронная обработка с отдельным DB engine для этого event loop."""
+    """Обработать LLM-запрос короткими DB-фазами без удержания connection во время генерации."""
     database_engine = create_database_engine(settings.DATABASE_URL)
     session_factory = async_sessionmaker(
         database_engine,
@@ -107,25 +106,42 @@ async def _process_llm_task_async(conversation_id: int) -> None:
     redis_client = create_redis_client()
 
     try:
+        llm_repo = LLMRepository()
+        cache = Cache(redis_client)
+
+        # Phase 1: read conversation state and prompt, then release the DB session.
         async with UnitOfWork(session_factory) as uow:
             conversation_repository = getattr(uow, "conversation", None)
             if conversation_repository is not None:
                 conversation = await conversation_repository.get_conversation_by_id(conversation_id)
                 if conversation is None or conversation.status != Status.PENDING_AI:
-                    logger.info("LLM PIPELINE SKIPPED: conversation_id=%s is no longer awaiting AI", conversation_id)
+                    logger.info(
+                        "LLM PIPELINE SKIPPED: conversation_id=%s is no longer awaiting AI",
+                        conversation_id,
+                    )
                     return
-            logger.info("llm_generation_started", conversation_id=conversation_id)
-            llm_service = LLMService(LLMRepository())
-            cache = Cache(redis_client)
+
+            messages = await llm_repo.get_prompt(
+                conversation_id,
+                uow.session,
+            )
+
+        logger.info("llm_generation_started", conversation_id=conversation_id)
+
+        # No DB session/transaction is held while waiting for the LLM.
+        with llm_latency_seconds.time():
+            response: LLMResponse = await llm_repo.request_response(messages, conversation_id=conversation_id)
+
+        logger.info(
+            "llm_response_validated",
+            conversation_id=conversation_id,
+            confidence=response.confidence,
+        )
+
+        # Phase 2: persist the result in a fresh, short-lived DB transaction.
+        async with UnitOfWork(session_factory) as uow:
             message_service = MessageService(uow, cache)
             conversation_service = ConversationService(uow, cache)
-
-            with llm_latency_seconds.time():
-                response: LLMResponse = await llm_service.generate_response(
-                    conversation_id,
-                    uow.session,
-                )
-            logger.info("llm_response_validated", conversation_id=conversation_id, confidence=response.confidence)
 
             if response.confidence >= settings.LLM_AI_CONFIDENCE_THRESHOLD:
                 message = await message_service.create_message(
@@ -137,7 +153,11 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     confidence=response.confidence,
                     needs_review=False,
                 )
-                logger.info("ai_message_persisted", conversation_id=conversation_id, message_id=getattr(message, "id", None))
+                logger.info(
+                    "ai_message_persisted",
+                    conversation_id=conversation_id,
+                    message_id=getattr(message, "id", None),
+                )
                 return
 
             if response.confidence >= settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD:
@@ -150,10 +170,18 @@ async def _process_llm_task_async(conversation_id: int) -> None:
                     confidence=response.confidence,
                     needs_review=True,
                 )
-                logger.info("ai_message_persisted_for_review", conversation_id=conversation_id, message_id=getattr(message, "id", None))
+                logger.info(
+                    "ai_message_persisted_for_review",
+                    conversation_id=conversation_id,
+                    message_id=getattr(message, "id", None),
+                )
                 return
 
-            logger.info("llm_escalation_required", conversation_id=conversation_id, confidence=response.confidence)
+            logger.info(
+                "llm_escalation_required",
+                conversation_id=conversation_id,
+                confidence=response.confidence,
+            )
             await conversation_service.escalate(conversation_id)
     finally:
         try:

@@ -41,11 +41,10 @@ class LLMRepository:
 
     async def _generate_response(
         self,
-        conversation_id: int,
-        session: AsyncSession,
+        messages: list[dict[str, str]],
+        conversation_id: int | None = None,
     ) -> LLMResponse:
         """Выполнить один запрос к LLM и строго проверить его результат."""
-        messages = await self._generate_prompt(conversation_id, session)
         self._validate_request(messages)
 
         logger.debug(
@@ -212,10 +211,27 @@ class LLMRepository:
         messages = list(reversed(result.scalars().all()))[:5]
         return self._generate_messages_history(messages)
 
+    async def get_prompt(
+        self,
+        conversation_id: int,
+        session: AsyncSession,
+    ) -> list[dict[str, str]]:
+        """Получить историю диалога и собрать prompt в рамках короткой DB-фазы."""
+        return await self._generate_prompt(conversation_id, session)
+
     async def get_llm_response(
         self,
         conversation_id: int,
         session: AsyncSession,
     ) -> LLMResponse:
         """Получить и проверить ровно один ответ LLM без повторных запросов."""
-        return await self._generate_response(conversation_id, session)
+        messages = await self.get_prompt(conversation_id, session)
+        return await self._generate_response(messages)
+
+    async def request_response(
+        self,
+        messages: list[dict[str, str]],
+        conversation_id: int | None = None,
+    ) -> LLMResponse:
+        """Выполнить LLM-запрос без удержания DB session."""
+        return await self._generate_response(messages, conversation_id=conversation_id)
