@@ -1,396 +1,387 @@
 # AI Support System
 
-Бэкенд-система поддержки пользователей с AI-ассистентом и операторской очередью (аналог helpdesk-платформ).
+AI-powered helpdesk backend with asynchronous LLM processing, operator escalation, role-based access, transactional domain logic, background workers, caching/idempotency infrastructure, and production-oriented observability.
 
-Проект построен вокруг **FastAPI + SQLAlchemy 2.x (async) + PostgreSQL + Redis + Celery + LLM**, с JWT-аутентификацией, ролями пользователей, операторским workflow, кэшированием, идемпотентностью, rate limiting и observability через Prometheus, Grafana и Jaeger.
+The repository contains a FastAPI backend, a small web frontend, PostgreSQL/Redis/Celery infrastructure, an OpenAI-compatible LLM integration, and an observability stack based on Prometheus, Grafana, and Jaeger.
 
----
+## Key capabilities
 
-## Что умеет система
+- JWT authentication with access and refresh tokens.
+- Roles: `user`, `operator`, `admin`.
+- Conversation lifecycle management with explicit state transitions.
+- User messages persisted in PostgreSQL.
+- Asynchronous LLM processing through Celery.
+- Confidence-based AI response/review/escalation flow.
+- Operator queue, assignment, replies, closing, and return-to-AI workflow.
+- Conversation/operator assignment history and audit logs.
+- Redis-backed caching and Celery broker/result backend.
+- Rate limiting and correlation IDs.
+- Domain events with post-commit event publication.
+- Prometheus metrics for HTTP, business, Celery and LLM activity.
+- OpenTelemetry tracing with Jaeger.
+- Health endpoint covering API dependencies and runtime resources.
+- Unit and E2E tests plus Locust load testing.
+- Docker Compose environment containing the application, databases, workers, LLM, frontend and monitoring stack.
 
-- Регистрация и вход пользователей (JWT access/refresh).
-- Ролевая модель: `user`, `operator`, `admin`.
-- Создание и ведение диалогов (`conversations`) между пользователем, AI и оператором.
-- Отправка сообщений и хранение истории диалога.
-- Фоновая LLM-обработка через Celery-задачи.
-- Эскалация диалога оператору при низкой уверенности AI.
-- Операторская очередь: взять диалог, ответить, закрыть, вернуть в AI.
-- Health-check и метрики Prometheus.
+## Architecture at a glance
 
----
-
-## Архитектура и стек
-
-### Технологии
-
-- **Python 3.10+**
-- **FastAPI** (REST API)
-- **SQLAlchemy 2.x (async)** + **Alembic** (миграции)
-- **PostgreSQL** (основная БД)
-- **Redis** (broker/backend для Celery)
-- **Celery** (фоновые задачи)
-- **OpenAI SDK / OpenRouter** (LLM интеграция)
-- **PyJWT + bcrypt** (аутентификация)
-- **pytest + pytest-cov** (тестирование)
-
-### Слои приложения
+The backend follows a layered design:
 
 ```text
-app/
-├─ main.py                    # FastAPI entrypoint, middleware, health/metrics
-├─ app/
-│  ├─ core/                   # infrastructure: config, security, cache, UoW,
-│  │                          # events, idempotency, rate limit, logging,
-│  │                          # metrics, correlation, telemetry, WebSocket
-│  ├─ domain/                 # domain events
-│  ├─ models/                 # SQLAlchemy models
-│  ├─ schemas/                # Pydantic API schemas
-│  ├─ repositories/           # persistence + LLM adapter
-│  ├─ services/               # business logic
-│  ├─ routers/                # user and operator HTTP API
-│  └─ celery/tasks/           # background LLM processing
-├─ alembic/                   # PostgreSQL migrations
-├─ tests/
-│  ├─ unit/
-│  ├─ e2e/
-│  └─ performance/
-├─ locustfile.py              # load testing
-└─ prometheus.yml             # Prometheus config
+HTTP client
+   |
+   v
+FastAPI routers
+   |
+   v
+Services / business logic
+   |
+   +----------------------+
+   |                      |
+   v                      v
+Unit of Work          Redis / cache
+   |
+   +----------------------+
+   |          |           |
+   v          v           v
+Repositories  State       PostgreSQL
+              Machine
+   |
+   v
+Domain events -> Event Bus -> handlers
 
-frontend/
-├─ src/
-│  ├─ components/             # user/operator/admin UI
-│  ├─ hooks/                  # auth and operator WebSocket hooks
-│  └─ api/                    # API client
-├─ Dockerfile
-└─ vite.config.js
-
-grafana/
-├─ dashboards/
-└─ provisioning/
+Message requiring AI
+   |
+   v
+Celery task
+   |
+   +--> short DB read transaction
+   |
+   +--> LLM request (no DB session held)
+   |
+   +--> short DB write transaction
 ```
 
----
+A detailed architecture is documented in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## Доменные сущности
+## Technology stack
 
-### Пользователи
+### Backend
 
-- `User`: nickname, fullname, email, hashed_password, role, active_conversations_count.
-- Роли: `user`, `operator`, `admin`.
+- Python 3.11 runtime in the application Docker image.
+- FastAPI 0.135.x.
+- Uvicorn.
+- Pydantic 2.x / pydantic-settings.
+- SQLAlchemy 2.x async.
+- Alembic.
+- PostgreSQL 13 in Compose.
+- Redis 7.x-compatible runtime.
+- Celery 5.6.x.
+- OpenAI SDK 2.x against an OpenAI-compatible endpoint.
+- PyJWT and bcrypt.
+- SlowAPI for rate limiting.
+- structlog for application logging.
+- tenacity and a circuit-breaker integration for transient LLM failures.
 
-### Диалоги
+### Observability
 
-- `Conversation`: user_id, operator_id, status, priority, channel, ai_confidence, timestamps.
-- Статусы: `open`, `waiting_for_user`, `waiting_for_operator`, `escalated`, `pending_ai`, `closed`.
+- Prometheus client.
+- Prometheus.
+- Grafana.
+- OpenTelemetry SDK/exporters/instrumentation.
+- Jaeger.
 
-### Сообщения
+### Testing
 
-- `Message`: sender_type (`user`/`ai`/`operator`), sender_id, content, confidence, needs_review.
+- pytest.
+- pytest-asyncio.
+- pytest-cov.
+- httpx.
+- Locust.
 
-### Аудит и история назначений
+### Frontend
 
-- `AuditLog` — фиксация действий по диалогу.
-- `ConversationOperatorLink` — история назначений операторов.
+The repository also contains a Vite-built frontend served by nginx. Docker uses Node 22 for the build stage and nginx 1.27 for the runtime stage.
 
----
+## Repository layout
 
-## API (основные группы)
+```text
+.
+├── app/
+│   ├── app/
+│   │   ├── core/                 # configuration and infrastructure
+│   │   ├── domain/               # domain events
+│   │   ├── models/               # SQLAlchemy models
+│   │   ├── repositories/         # persistence and state-machine adapters
+│   │   ├── routers/              # HTTP API
+│   │   ├── schemas/              # Pydantic schemas
+│   │   ├── services/             # business logic
+│   │   └── celery/               # Celery application and tasks
+│   ├── alembic/                  # database migrations
+│   ├── tests/
+│   │   ├── unit/
+│   │   └── e2e/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── locustfile.py
+├── frontend/
+├── grafana/
+├── docker-compose.yml
+├── prometheus.yml
+├── ARCHITECTURE.md
+├── DEPLOYMENT.md
+└── CONTRIBUTING.md
+```
 
-> Префикс OpenAPI задаётся `root_path` и по умолчанию равен `/api`.
+## API
 
-### Auth
+The application uses `/api` as the configured FastAPI root path.
 
-- `POST /auth/register` — регистрация.
-- `POST /auth/login` — вход (JSON и form-data для Swagger).
-- `POST /auth/refresh` — обновление токена.
+### Authentication
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
 
 ### Users
 
-- `GET /users/me` — текущий пользователь.
-- `GET /users/` — список пользователей (admin).
-- `GET /users/{id}` / `PATCH /users/{id}` / `DELETE /users/{id}`.
-- `PATCH /users/me`.
+- `GET /api/users/me`
+- `PATCH /api/users/me`
+- Admin user management endpoints under `/api/users/`.
 
-### Conversations
+### Conversations and messages
 
-- `POST /conversations/` — создать диалог.
-- `GET /conversations/` — список с фильтрацией и пагинацией.
-- `GET /conversations/{id}` — получить диалог.
-- `POST /conversations/{id}/close` — закрыть.
-- `GET /conversations/queue/active` — активная очередь (admin).
+- `POST /api/conversations/`
+- `GET /api/conversations/`
+- `GET /api/conversations/{id}`
+- `POST /api/conversations/{id}/close`
+- `POST /api/conversations/{id}/messages`
+- `GET /api/conversations/{id}/messages`
 
-### Messages
+### Operator workflow
 
-- `POST /conversations/{id}/messages` — отправить сообщение.
-- `GET /conversations/{id}/messages` — получить историю.
+- `GET /api/operator/queue`
+- `POST /api/operator/assign/{conversation_id}`
+- `POST /api/operator/reply/{conversation_id}`
+- `POST /api/operator/close/{conversation_id}`
+- `POST /api/operator/back_to_ai/{conversation_id}`
 
-### Operator
+### Operations
 
-- `GET /operator/queue` — очередь оператора.
-- `POST /operator/assign/{conversation_id}` — взять в работу.
-- `POST /operator/reply/{conversation_id}` — ответить.
-- `POST /operator/close/{conversation_id}` — закрыть.
-- `POST /operator/back_to_ai/{conversation_id}` — вернуть в AI.
+- `GET /api/health`
+- `GET /api/metrics`
 
-### Service endpoints
+Swagger/OpenAPI and ReDoc are available through the configured FastAPI documentation endpoints.
 
-- `GET /health` — состояние API/DB/Redis/Celery.
-- `GET /metrics` — Prometheus metrics.
+## Conversation lifecycle
 
----
+Conversation statuses are:
 
-## Как работает AI-пайплайн
+- `open`
+- `pending_ai`
+- `escalated`
+- `waiting_for_operator`
+- `waiting_for_user`
+- `closed`
 
-1. Пользователь отправляет сообщение в диалог.
-2. Сообщение сохраняется, затем ставится Celery-задача `process_llm_task`.
-3. Задача формирует запрос, отправляет его в LLM и получает ответ.
-4. Ответ проходит проверку структуры, JSON-декодирование и строгую Pydantic-валидацию.
-5. Развилка по `confidence`:
-   - `>= LLM_AI_CONFIDENCE_THRESHOLD` — AI отвечает автоматически;
-   - `>= LLM_ESCALATION_CONFIDENCE_THRESHOLD` — AI отвечает, но с `needs_review=True`;
-   - ниже порога — диалог переводится в `escalated`.
+The `ConversationStateMachine` owns allowed transitions. Services do not mutate statuses arbitrarily; state changes go through the state-machine abstraction and are audited.
 
-LLM-запрос выполняется **один раз**. Ошибка запроса, некорректный JSON или ошибка валидации не запускают автоматические повторы.
+## AI pipeline
 
----
+1. A user sends a message.
+2. The message is persisted and the conversation enters the AI-processing flow.
+3. A Celery task loads the required conversation context.
+4. The DB session is released before the external LLM request.
+5. The LLM response is validated through the application schema.
+6. The result is classified by confidence:
+   - at or above `LLM_AI_CONFIDENCE_THRESHOLD`: automatic AI response;
+   - between the escalation and AI thresholds: AI response marked for review;
+   - below the escalation threshold: conversation escalates to an operator.
+7. A fresh short DB transaction persists the result.
 
-## Проблема с PostgreSQL под нагрузкой
+This split deliberately avoids holding a database connection while waiting for network-bound LLM I/O.
 
-Во время нагрузочного тестирования на 100 пользователей с `10 users/s` в течение 5 минут обнаружился bottleneck вокруг DB connection pool и lifecycle SQLAlchemy session в Celery.
+## Docker Compose
 
-Наблюдались рост P95/P99 latency и большое количество HTTP 500 при отправке сообщений. 500 также появлялись на части операций получения и создания диалогов. При этом отдельные обычные SQL-запросы выполнялись значительно быстрее полного request pipeline.
+The Compose stack contains:
 
-### Причина
+| Service | Purpose | Default port |
+|---|---|---:|
+| `postgres` | PostgreSQL database | 5432 |
+| `redis` | Cache / Celery broker | 6379 |
+| `migrate` | Alembic migrations | — |
+| `web` | FastAPI application | 8001 |
+| `celery` | Background worker | 8002 internally |
+| `ollama` | Local OpenAI-compatible LLM API | 11434 |
+| `ollama-model` | Pulls configured model once | — |
+| `frontend` | Built web UI | 5173 |
+| `prometheus` | Metrics collection | 9090 |
+| `grafana` | Dashboards | 3000 |
+| `jaeger` | Distributed tracing UI/OTLP | 16686 / 4317 / 4318 |
 
-Старая схема Celery держала Unit of Work во время ожидания LLM:
-
-```text
-open UnitOfWork
-      │
-      ├─ DB query: история диалога
-      │
-      ├─ await LLM request  ← долгое сетевое ожидание
-      │
-      └─ DB write
-close UnitOfWork
-```
-
-То есть lifecycle DB session/transaction охватывал не только работу с БД, но и внешний LLM I/O. При большом количестве параллельных задач это увеличивало время удержания DB resources. При исчерпании pool новые операции могли ждать до `pool_timeout`, а затем получать ошибку SQLAlchemy.
-
-**Важно:** увеличение pool само по себе проблему не исправляет — оно только увеличивает запас по числу соединений.
-
-### Как решаем
-
-Celery pipeline разделён на две короткие DB-фазы:
-
-```text
-Phase 1
-┌─────────────────────────────┐
-│ DB session                  │
-│ - проверить conversation    │
-│ - получить history/prompt   │
-└──────────────┬──────────────┘
-               │ session closed
-               ▼
-        ┌───────────────┐
-        │ LLM request   │
-        │ без DB session│
-        └───────┬───────┘
-                │ response
-                ▼
-Phase 2
-┌─────────────────────────────┐
-│ новая DB session            │
-│ - сохранить AI message      │
-│ - изменить status/escalate  │
-└─────────────────────────────┘
-```
-
-Дополнительно pool увеличен:
-
-```text
-pool_size:    20 → 30
-max_overflow: 10 → 20
-pool_timeout: 30s
-pool_pre_ping: enabled
-pool_recycle: 3600s
-```
-
-Основной фикс — **не удерживать DB transaction во время LLM I/O**.
-
-Текущий фикс намеренно минимальный. В Celery-задаче пока создаётся отдельный SQLAlchemy engine/pool на выполнение task и затем освобождается. Следующим отдельным этапом нужно оптимизировать lifecycle engine/pool на уровне Celery worker и отдельно настроить LLM/Celery concurrency.
-
----
-## Конфигурация и переменные окружения
-
-Основные переменные (из `Settings`):
-
-### Application
-
-- `APP_NAME`
-- `APP_VERSION`
-- `APP_DESCRIPTION`
-- `DOCS_URL`
-- `REDOC_URL`
-- `OPENAPI_URL`
-- `API_PREFIX`
-
-### Database
-
-- `DATABASE_URL`
-
-> В CI по умолчанию используется SQLite (`sqlite+aiosqlite:///./app.db`), локально/в docker-compose — PostgreSQL.
-
-### JWT
-
-- `JWT_SECRET_KEY`
-- `JWT_ALGORITHM`
-- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`
-- `JWT_REFRESH_TOKEN_EXPIRE_DAYS`
-
-### LLM
-
-- `LLM_BASE_URL` (по умолчанию `http://localhost:11434/v1`, OpenAI-совместимый endpoint Ollama)
-- `LLM_API_KEY`
-- `LLM_MODEL`
-- `LLM_TIMEOUT`
-- `LLM_TEMPERATURE`
-- `LLM_AI_CONFIDENCE_THRESHOLD`
-- `LLM_ESCALATION_CONFIDENCE_THRESHOLD`
-- `LLM_TOKEN_LIMIT`
-
-По умолчанию приложение использует локальную модель Ollama `llama3.1`. Перед запуском установите Ollama и выполните `ollama pull llama3.1`. Для OpenRouter задайте в `.env` `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_API_KEY` и нужную `LLM_MODEL`.
-
-### Celery / Redis
-
-- `REDIS_URL`
-- `CELERY_BROKER_URL`
-- `CELERY_RESULT_BACKEND`
-
-### Business
-
-- `MAX_OPERATOR_ACTIVE_CONVERSATIONS`
-
----
-
-## Запуск проекта
-
-## 1) Через Docker Compose (рекомендуется)
-
-Из корня репозитория:
+Start the stack:
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-Поднимутся сервисы:
+The `web` service waits for migrations and the configured Ollama model. PostgreSQL and Ollama have Docker healthchecks; the API also exposes `/health`.
 
-- `web` (FastAPI + alembic upgrade)
-- `postgres`
-- `redis`
-- `celery`
-- `ollama` (локальный OpenAI-совместимый LLM API)
-- `ollama-model` (однократно скачивает модель из `LLM_MODEL`)
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the complete procedure.
 
-API по умолчанию: `http://localhost:8001/api/docs`.
+## Local development
 
-Веб-интерфейс доступен по адресу `http://localhost:5173`. Он автоматически
-подбирает рабочее пространство по роли текущего пользователя: клиентский чат,
-очередь и WebSocket-уведомления для операторов, а также дашборд метрик для
-администраторов. Frontend проксирует API через `/api`, поэтому отдельная
-настройка CORS в браузере не требуется.
-
-Grafana доступна по адресу `http://localhost:3000`; datasource Prometheus и
-дашборд `AI Support Overview` загружаются автоматически. Prometheus доступен
-по адресу `http://localhost:9090` и собирает метрики API и Celery worker.
-
-По умолчанию Compose использует `http://ollama:11434/v1` и модель `llama3.1`. Модели сохраняются в volume `ollama_data`; при первом запуске потребуется скачать несколько гигабайт.
-
-## 2) Локально (без Docker)
+The backend can be run without building the complete Compose stack.
 
 ```bash
 cd app
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Запуск API:
-
-```bash
-PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-```
-
-Запуск Celery worker:
-
-```bash
-PYTHONPATH=. celery -A app.celery.celery_app:celery_app worker --loglevel=info
-```
-
-Миграции:
+Run migrations:
 
 ```bash
 cd app
 alembic upgrade head
 ```
 
----
+Run the API:
 
-## Тестирование и покрытие
+```bash
+cd app
+PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```
 
-Запуск всех тестов с покрытием:
+Run a worker:
+
+```bash
+cd app
+PYTHONPATH=. celery -A app.celery.celery_app:celery_app worker --loglevel=info
+```
+
+Local development still requires compatible PostgreSQL/Redis/LLM services unless those dependencies are provided by Docker.
+
+## Configuration
+
+Configuration is defined by `app/app/core/config.py` and loaded through Pydantic Settings. A `.env` file is supported.
+
+Important variables include:
+
+### Application
+
+`APP_NAME`, `APP_VERSION`, `APP_DESCRIPTION`, `DOCS_URL`, `REDOC_URL`, `OPENAPI_URL`, `API_PREFIX`.
+
+### Database
+
+`DATABASE_URL`.
+
+### Authentication
+
+`JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`, `JWT_REFRESH_TOKEN_EXPIRE_DAYS`.
+
+### LLM
+
+`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`, `LLM_TEMPERATURE`, `LLM_AI_CONFIDENCE_THRESHOLD`, `LLM_ESCALATION_CONFIDENCE_THRESHOLD`, `LLM_TOKEN_LIMIT`, `LLM_RETRY_ATTEMPTS`, `LLM_RETRY_WAIT_MULTIPLIER`, `LLM_RETRY_WAIT_MAX`.
+
+### Redis / Celery
+
+`REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`.
+
+### Cache / business limits
+
+`CONVERSATION_CACHE_TTL_SECONDS`, `CONVERSATION_CACHE_KEY_PREFIX`, `MAX_OPERATOR_ACTIVE_CONVERSATIONS`.
+
+### Observability
+
+`LOG_DIR`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_INSECURE`, `OTEL_ENVIRONMENT`.
+
+Compose additionally uses `RATE_LIMIT_OVERRIDE` for load-testing scenarios. Locust supports `LOCUST_USER_PASSWORD`, `LOCUST_OPERATOR_EMAIL`, `LOCUST_OPERATOR_PASSWORD`, and `LOCUST_ESCALATION_TIMEOUT`.
+
+Do not use the default JWT secret outside development. Put secrets in the environment rather than committing them.
+
+## Migrations
+
+Alembic is the source of truth for database schema changes.
+
+```bash
+cd app
+alembic upgrade head
+```
+
+Create a revision after changing SQLAlchemy models:
+
+```bash
+cd app
+alembic revision --autogenerate -m "describe change"
+```
+
+Review generated SQL before applying it. Do not edit an already-applied migration to change production history; create a new revision.
+
+Compose runs `alembic upgrade head` in the dedicated `migrate` service before starting the API and worker.
+
+## Monitoring and tracing
+
+### Health
+
+```bash
+curl http://localhost:8001/health
+```
+
+The health response checks database, Redis, Celery, LLM API, disk space and the number of open conversations.
+
+### Prometheus
+
+Open `http://localhost:9090`.
+
+The API exposes `/metrics`. The Celery worker exposes a multiprocess Prometheus endpoint on port 8002 inside the Compose network.
+
+Metrics include HTTP request count/duration, active conversations, messages, escalations, operator assignments, conversation closures, return-to-AI operations, LLM latency and Celery task outcomes/durations.
+
+### Grafana
+
+Open `http://localhost:3000`. Compose mounts the repository's provisioning and dashboard configuration.
+
+### Jaeger
+
+Open `http://localhost:16686`. FastAPI and Celery tracing are configured through OpenTelemetry, with OTLP sent to Jaeger.
+
+## Testing
+
+Run the complete test suite:
+
+```bash
+cd app
+pytest
+```
+
+With coverage:
 
 ```bash
 cd app
 pytest --cov=app --cov-report=term-missing
 ```
 
-## Нагрузочное тестирование
+The GitHub Actions workflow runs the tests on Python 3.12, uses Redis as a service, starts a Celery worker, and publishes coverage/JUnit artifacts.
 
-Для нагрузочных тестов используется Locust (`app/locustfile.py`). Например:
+### Load testing
+
+Locust is configured in `app/locustfile.py` and exercises registration, login, conversation creation, message sending, escalation, operator assignment and operator replies.
+
+Example:
 
 ```bash
-RATE_LIMIT_OVERRIDE=10000/minute docker compose up -d --build
-locust -f locustfile.py \
-  --host http://localhost:8001 \
-  --headless \
-  --users 100 \
-  --spawn-rate 10 \
-  --run-time 5m \
-  --csv=tests/performance/results
+cd app
+locust -f locustfile.py --host http://localhost:8001 --headless --users 100 --spawn-rate 10 --run-time 5m --csv=tests/performance/results
 ```
 
-Результаты сохраняются в `app/tests/performance/`.
+Performance testing is intentionally separate from the normal CI test suite.
 
----
+## Quality and contribution
 
-## Наблюдаемость
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow, migration rules, test commands, static-analysis expectations, branches and pull requests.
 
-- HTTP-метрики через middleware (`http_requests_total`, `http_request_duration_seconds`), включая 5xx.
-- Бизнес-метрики: диалоги, сообщения, эскалации, назначения операторов и операции пользователей.
-- Runtime-метрики: активные диалоги, Celery queue depth и доступность БД/Redis.
-- Celery task outcomes/duration и LLM latency скрейпятся с отдельного worker exporter.
-- `/metrics` и внутренний Celery exporter на порту `8002` для Prometheus scraping.
-- `/health` с проверками API/DB/Redis/Celery.
-- Централизованное логирование через `app.core.logging`.
-- Jaeger UI: `http://localhost:16686`.
+## License
 
----
-
-## Ограничения и roadmap
-
-Текущая версия — robust MVP backend. Для production-уровня обычно добавляют:
-
-- stricter валидацию и унификацию error-моделей;
-- rate limiting / anti-abuse;
-- идемпотентность для message ingestion;
-- расширенную observability (tracing, structured audit analytics);
-- websocket-уведомления операторов;
-- полноценные SLA/SLO и policy-автоматизацию.
-
----
-
-## Лицензия
-
-См. файл [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE).
