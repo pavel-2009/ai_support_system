@@ -90,14 +90,16 @@ async def send_message(
                 detail="Запрос с этим Idempotency-Key уже выполняется.",
             )
 
-    if conversation.status not in (Status.OPEN, Status.WAITING_FOR_USER):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Диалог сейчас не принимает сообщения пользователя.",
+    should_process_ai = (
+        conversation.status == Status.OPEN
+        or (
+            conversation.status == Status.WAITING_FOR_USER
+            and conversation.operator_id is None
         )
+    )
 
     try:
-        new_message: Message | None = await message_service.create_message(
+        new_message = await message_service.create_message(
             conversation_id=conversation.id,
             sender_type="user",
             sender_id=current_user.id,
@@ -107,7 +109,7 @@ async def send_message(
         if new_message is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Диалог больше не принимает сообщения пользователя.",
+                detail="Диалог сейчас не принимает сообщения пользователя.",
             )
 
         response = MessageGet.model_validate(new_message)
@@ -123,21 +125,14 @@ async def send_message(
             await idempotency.delete(storage_key)
         raise
 
-    # Operator-owned conversations never restart the AI after a customer reply.
-    if await message_service.get_conversation_status(conversation.id) == Status.PENDING_AI:
-        logger.info(
-            "message_created",
-            message_id=new_message.id,
-            conversation_id=conversation.id,
-            sender_type="user",
-        )
+    if should_process_ai:
         try:
             process_llm_task.delay(
                 conversation_id=conversation.id,
                 correlation_id=get_correlation_id(),
             )
         except Exception:
-            logger.exception("CELERY ENQUEUE FAILED: conversation_id=%s", conversation.id)
+            logger.exception("Failed to enqueue AI task for conversation %s", conversation.id)
 
     return response
 
