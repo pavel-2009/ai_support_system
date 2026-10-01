@@ -1,6 +1,2 @@
 Method,Name,Error,Occurrences,First Seen,Last Seen
-POST,POST /api/auth/login [operator],CatchResponseError('Operator login failed: 401'),1,2026-09-30T14:19:04Z,2026-09-30T14:19:04Z
-POST,POST /api/conversations/,CatchResponseError('Conversation creation failed: 500'),9,2026-09-30T14:21:27Z,2026-09-30T14:21:27Z
-GET,GET /api/conversations/{id},CatchResponseError('Conversation status check failed: 500'),23,2026-09-30T14:21:28Z,2026-09-30T14:21:28Z
-POST,POST /api/conversations/{id}/messages,CatchResponseError('Message creation failed: 404'),47,2026-09-30T14:18:04Z,2026-09-30T14:18:19Z
-POST,POST /api/conversations/{id}/messages,CatchResponseError('Message creation failed: 500'),625,2026-09-30T14:17:57Z,2026-09-30T14:22:21Z
+POST,POST /api/conversations/{id}/messages,CatchResponseError('Message creation failed: 500'),224,2026-09-30T15:03:59Z,2026-09-30T15:04:27Z

@@ -44,7 +44,7 @@ def make_fingerprint(message: MessageCreate) -> str:
     status_code=status.HTTP_201_CREATED,
     summary="Создать новое сообщение в беседе",
 )
-@limiter.limit(rate_limit("30/minute"), key_func=get_user_identifier)
+@limiter.limit(rate_limit("10000/minute"), key_func=get_user_identifier)
 async def send_message(
     request: Request,
     message: MessageCreate,

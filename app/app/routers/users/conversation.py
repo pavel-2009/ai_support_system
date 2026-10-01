@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 
 @router.post("/", response_model=ConversationGet, status_code=status.HTTP_201_CREATED)
-@limiter.limit(rate_limit("10/minute"), key_func=get_user_identifier)
+@limiter.limit(rate_limit("10000/minute"), key_func=get_user_identifier)
 async def create_conversation(
     request: Request,
     conversation_data: ConversationCreate,
@@ -40,7 +40,7 @@ async def create_conversation(
 
 
 @router.get("/", response_model=ConversationListResponse)
-@limiter.limit(rate_limit("100/minute"), key_func=get_user_identifier)
+@limiter.limit(rate_limit("10000/minute"), key_func=get_user_identifier)
 async def get_conversations(
     request: Request,
     cursor: int | None = Query(default=None, ge=1, description="ID курсора"),

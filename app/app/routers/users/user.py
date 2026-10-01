@@ -110,7 +110,7 @@ async def delete_user(
 
 
 @auth_router.post("/register", response_model=UserGet, status_code=status.HTTP_201_CREATED, summary="Регистрация")
-@limiter.limit(rate_limit("3/minute"), key_func=get_user_identifier)
+@limiter.limit(rate_limit("10000/minute"), key_func=get_user_identifier)
 async def register_user(
     request: Request,
     data: UserCreate,
@@ -125,7 +125,7 @@ async def register_user(
 
 
 @auth_router.post("/login", response_model=Token, summary="Логин пользователя")
-@limiter.limit(rate_limit("5/minute"), key_func=get_user_identifier)
+@limiter.limit(rate_limit("10000/minute"), key_func=get_user_identifier)
 async def login_user(
     request: Request,
     user_service: UserService = Depends(get_user_service),
