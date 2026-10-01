@@ -1,16 +1,11 @@
 """Репозиторий для работы с сообщениями."""
 
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import get_logger, log_database_message_error
 from app.models.conversation import Conversation, Status
 from app.models.message import Message
 from app.models.user import UserRole
-
-
-logger = get_logger(__name__)
 
 
 class MessageRepository:
@@ -30,42 +25,31 @@ class MessageRepository:
         needs_review: bool = False,
     ) -> Message | None:
         """Создать новое сообщение."""
-        self.session.info["message_creation_started"] = True
-        try:
-            conversation = (
-                await self.session.execute(
-                    select(Conversation)
-                    .where(Conversation.id == conversation_id)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
-        except Exception as exc:
-            if isinstance(exc, SQLAlchemyError):
-                log_database_message_error(
-                    "repository.load_conversation",
-                    exc,
-                    conversation_id=conversation_id,
-                    sender_type=sender_type,
-                )
-            raise
+        conversation = (
+            await self.session.execute(
+                select(Conversation)
+                .where(Conversation.id == conversation_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+
         if conversation is None:
-            logger.warning("DB CREATE message skipped: conversation %s not found", conversation_id)
             return None
 
-        if sender_type == UserRole.USER.value and conversation.status not in (Status.OPEN, Status.WAITING_FOR_USER):
-            logger.warning("MESSAGE REJECTED: user reply is not expected conversation=%s status=%s", conversation_id, conversation.status)
+        if sender_type == UserRole.USER.value and conversation.status not in (
+            Status.OPEN,
+            Status.WAITING_FOR_USER,
+        ):
             return None
 
         if sender_type == "ai" and conversation.status != Status.PENDING_AI:
-            logger.debug("ai_response_skipped", conversation_id=conversation_id, status=conversation.status)
             return None
 
         if sender_type == UserRole.OPERATOR.value:
-            if conversation.operator_id != sender_id or conversation.status != Status.WAITING_FOR_OPERATOR:
-                logger.warning(
-                    "DB CREATE message rejected: operator=%s conversation=%s status=%s operator_id=%s",
-                    sender_id, conversation_id, conversation.status, conversation.operator_id,
-                )
+            if (
+                conversation.operator_id != sender_id
+                or conversation.status != Status.WAITING_FOR_OPERATOR
+            ):
                 return None
 
         new_message = Message(
@@ -77,20 +61,9 @@ class MessageRepository:
             confidence=confidence,
             needs_review=needs_review,
         )
-        try:
-            self.session.add(new_message)
-            await self.session.flush()
-            await self.session.refresh(new_message)
-        except Exception as exc:
-            if isinstance(exc, SQLAlchemyError):
-                log_database_message_error(
-                    "repository.insert_message",
-                    exc,
-                    conversation_id=conversation_id,
-                    sender_type=sender_type,
-                    sender_id=sender_id,
-                )
-            raise
+        self.session.add(new_message)
+        await self.session.flush()
+        await self.session.refresh(new_message)
         return new_message
 
     async def get_messages_by_conversation(self, conversation_id: int) -> list[Message]:
