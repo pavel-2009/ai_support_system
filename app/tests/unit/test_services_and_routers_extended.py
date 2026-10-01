@@ -88,7 +88,7 @@ class TestUserServiceExtended:
 
         user = MagicMock(hashed_password="hash")
         with patch.object(uow.users, "get_by_email", AsyncMock(return_value=user)), patch(
-            "app.services.user_service.verify_password", return_value=False
+            "app.services.user_service.verify_password_async", new_callable=AsyncMock, return_value=False
         ):
             with pytest.raises(ValueError):
                 await service.login_user(data)
