@@ -108,10 +108,19 @@ jobs:
       - name: Coverage summary
         if: always()
         run: |
+          if [ ! -f coverage.xml ]; then
+            echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Coverage report was not generated." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           python - <<'PY'
           import xml.etree.ElementTree as ET
+
           root = ET.parse('coverage.xml').getroot()
           line_rate = float(root.attrib.get('line-rate', 0)) * 100
+
           with open('/tmp/summary.md', 'w', encoding='utf-8') as f:
             f.write(f"## Coverage\n\nLine coverage: **{line_rate:.2f}%**\n")
           PY
