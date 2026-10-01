@@ -3,10 +3,7 @@
 import json
 import logging
 
-import app.core.logging as logging_config
-from app.core.config import settings
 from app.core.logging import get_logger
-from sqlalchemy.exc import SQLAlchemyError
 
 
 def _payload(record: logging.LogRecord) -> dict:
