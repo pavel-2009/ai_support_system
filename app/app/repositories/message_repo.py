@@ -1,9 +1,10 @@
 """Репозиторий для работы с сообщениями."""
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import get_logger
+from app.core.logging import get_logger, log_database_message_error
 from app.models.conversation import Conversation, Status
 from app.models.message import Message
 from app.models.user import UserRole
@@ -29,13 +30,24 @@ class MessageRepository:
         needs_review: bool = False,
     ) -> Message | None:
         """Создать новое сообщение."""
-        conversation = (
-            await self.session.execute(
-                select(Conversation)
-                .where(Conversation.id == conversation_id)
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
+        self.session.info["message_creation_started"] = True
+        try:
+            conversation = (
+                await self.session.execute(
+                    select(Conversation)
+                    .where(Conversation.id == conversation_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+        except Exception as exc:
+            if isinstance(exc, SQLAlchemyError):
+                log_database_message_error(
+                    "repository.load_conversation",
+                    exc,
+                    conversation_id=conversation_id,
+                    sender_type=sender_type,
+                )
+            raise
         if conversation is None:
             logger.warning("DB CREATE message skipped: conversation %s not found", conversation_id)
             return None
@@ -65,9 +77,20 @@ class MessageRepository:
             confidence=confidence,
             needs_review=needs_review,
         )
-        self.session.add(new_message)
-        await self.session.flush()
-        await self.session.refresh(new_message)
+        try:
+            self.session.add(new_message)
+            await self.session.flush()
+            await self.session.refresh(new_message)
+        except Exception as exc:
+            if isinstance(exc, SQLAlchemyError):
+                log_database_message_error(
+                    "repository.insert_message",
+                    exc,
+                    conversation_id=conversation_id,
+                    sender_type=sender_type,
+                    sender_id=sender_id,
+                )
+            raise
         return new_message
 
     async def get_messages_by_conversation(self, conversation_id: int) -> list[Message]:

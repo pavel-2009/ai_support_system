@@ -92,7 +92,6 @@ class MessageService:
                 self.uow.add_event(ConversationMarkedForReview(str(conversation_id)))
 
         self.uow.add_event(MessageSent(str(new_message.id), str(conversation_id)))
-
         return new_message
 
     async def get_messages_by_conversation(self, conversation_id: int):
