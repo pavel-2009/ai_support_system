@@ -50,7 +50,7 @@ class TestUserService:
 
         with patch.object(uow.users, "exists", AsyncMock(return_value=False)), patch.object(
             uow.users, "create", AsyncMock(return_value=created_user)
-        ), patch("app.services.user_service.hash_password", return_value="hashed"):
+        ), patch("app.services.user_service.hash_password_async", new_callable=AsyncMock, return_value="hashed"):
             created = await service.register_user(user_data)
             assert created.id == 1
 
@@ -59,7 +59,7 @@ class TestUserService:
                 await service.register_user(user_data)
 
         with patch.object(uow.users, "get_by_email", AsyncMock(return_value=created_user)), patch(
-            "app.services.user_service.verify_password", return_value=True
+            "app.services.user_service.verify_password_async", new_callable=AsyncMock, return_value=True
         ):
             tokens = await service.login_user(UserLogin(email=user_data.email, password="Pass123!"))
             assert tokens.access_token == "access-token"
