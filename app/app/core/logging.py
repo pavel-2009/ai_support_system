@@ -104,14 +104,12 @@ def configure_logging() -> None:
     root_logger.handlers.clear()
     root_logger.setLevel(logging.DEBUG)
 
-    # Консоль: строго INFO. WARNING/ERROR/DEBUG здесь не дублируются.
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.addFilter(_ExactLevelFilter(logging.INFO))
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    # Все уровни сохраняются отдельно.
     handlers = {
         "debug.log": _make_file_handler(
             log_dir / "debug.log", logging.DEBUG, logging.DEBUG
@@ -130,21 +128,9 @@ def configure_logging() -> None:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
 
-    message_error_logger = logging.getLogger("app.message_errors")
-    message_error_logger.handlers.clear()
-    message_error_logger.setLevel(logging.ERROR)
-    message_error_logger.propagate = False
-    message_error_handler = _make_file_handler(
-        log_dir / "message_errors.log", logging.ERROR, logging.CRITICAL
-    )
-    message_error_handler.setFormatter(formatter)
-    message_error_logger.addHandler(message_error_handler)
-
-    # SQLAlchemy/driver технические сообщения не должны загрязнять INFO.
     for name in ("sqlalchemy.engine", "sqlalchemy.pool", "aiosqlite"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    # Uvicorn должен использовать нашу единую маршрутизацию логов.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logger = logging.getLogger(name)
         logger.handlers.clear()
@@ -158,16 +144,3 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     """Получить структурированный логгер по имени модуля."""
     configure_logging()
     return structlog.get_logger(name)
-
-
-def log_database_message_error(stage: str, exception: Exception, **context: Any) -> None:
-    """Записать ошибку БД при создании сообщения в отдельный файл со stack trace."""
-    configure_logging()
-    logger = structlog.get_logger("app.message_errors")
-    logger.error(
-        "message_creation_error",
-        stage=stage,
-        error=str(exception),
-        exc_info=(type(exception), exception, exception.__traceback__),
-        **context,
-    )
