@@ -55,12 +55,6 @@ async def send_message(
     redis_client: Redis = Depends(get_redis_client),
 ) -> MessageGet:
     """Отправить новое сообщение в беседе."""
-    if conversation.status not in (Status.OPEN, Status.WAITING_FOR_USER):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Диалог сейчас не принимает сообщения пользователя.",
-        )
-
     idempotency = IdempotencyKey(redis_client) if idempotency_key else None
     storage_key = None
     fingerprint = None
@@ -95,6 +89,12 @@ async def send_message(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Запрос с этим Idempotency-Key уже выполняется.",
             )
+
+    if conversation.status not in (Status.OPEN, Status.WAITING_FOR_USER):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Диалог сейчас не принимает сообщения пользователя.",
+        )
 
     try:
         new_message: Message | None = await message_service.create_message(
