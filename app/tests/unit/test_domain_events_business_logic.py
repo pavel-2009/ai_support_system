@@ -100,7 +100,7 @@ async def test_user_service_queues_user_lifecycle_events():
     uow.users.update.return_value = updated
     uow.users.delete.return_value = None
 
-    with patch("app.services.user_service.hash_password", return_value="hash"):
+    with patch("app.services.user_service.hash_password_async", new_callable=AsyncMock, return_value="hash"):
         await service.register_user(
             UserCreate(email="event@example.com", password="Pass123!", nickname="event")
         )

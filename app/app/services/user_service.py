@@ -1,6 +1,6 @@
 """Сервисный слой пользователей: бизнес-правила и orchestration."""
 
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password_async, verify_password_async
 from app.core.uow import UnitOfWork
 from app.core.config import settings
 from app.services.token_service import TokenService, RefreshTokenError, RefreshTokenNotFound, RefreshTokenReused
@@ -46,7 +46,7 @@ class UserService:
         if await self.uow.users.exists(email=data.email):
             raise ValueError("Пользователь с таким email уже существует.")
 
-        hashed_password = hash_password(data.password)
+        hashed_password = await hash_password_async(data.password)
         user = await self.uow.users.create(data, hashed_password)
         self._add_event(UserRegistered(str(user.id)))
         return user
@@ -88,7 +88,7 @@ class UserService:
         if self.token_service is None:
             raise RuntimeError("TokenService не настроен для UserService.")
         user = await self.uow.users.get_by_email(data.email)
-        if not user or not verify_password(data.password, user.hashed_password):
+        if not user or not await verify_password_async(data.password, user.hashed_password):
             raise ValueError("Неверные учетные данные.")
 
         access_token, refresh_token = self.token_service.issue_pair(
