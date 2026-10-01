@@ -5,9 +5,8 @@ import os
 import time
 
 from opentelemetry import trace
-from celery.signals import worker_process_shutdown, worker_ready
+from celery.signals import worker_process_init, worker_process_shutdown, worker_ready
 from prometheus_client import CollectorRegistry, multiprocess, start_http_server
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.celery.celery_app import celery_app
 from app.core.config import settings
@@ -23,7 +22,7 @@ from app.core.metrics import (
 )
 from app.core.telemetry import get_tracer
 from app.core.uow import UnitOfWork
-from app.db import create_database_engine
+from app.celery.worker_db import close_worker_database, get_worker_session_factory, initialize_worker_database
 from app.models.conversation import Status
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
@@ -47,8 +46,16 @@ def start_prometheus_exporter(**kwargs) -> None:
     start_http_server(8002, addr="0.0.0.0", registry=registry)
 
 
+@worker_process_init.connect
+def initialize_worker_database_process(**kwargs) -> None:
+    """Initialize one database engine/session factory in each prefork worker process."""
+    initialize_worker_database()
+
+
 @worker_process_shutdown.connect
-def mark_worker_process_dead(pid=None, **kwargs) -> None:
+def shutdown_worker_database_process(pid=None, **kwargs) -> None:
+    """Dispose the worker-local database engine before the process exits."""
+    asyncio.run(close_worker_database())
     if pid is not None:
         multiprocess.mark_process_dead(pid)
 
@@ -98,11 +105,7 @@ def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> s
 
 async def _process_llm_task_async(conversation_id: int) -> None:
     """Обработать LLM-запрос короткими DB-фазами без удержания connection во время генерации."""
-    database_engine = create_database_engine(settings.DATABASE_URL)
-    session_factory = async_sessionmaker(
-        database_engine,
-        expire_on_commit=False,
-    )
+    session_factory = get_worker_session_factory()
     redis_client = create_redis_client()
 
     try:
@@ -187,8 +190,7 @@ async def _process_llm_task_async(conversation_id: int) -> None:
         try:
             await redis_client.aclose()
         finally:
-            await database_engine.dispose()
             logger.debug(
-                "CELERY DB ENGINE DISPOSED: conversation_id=%s",
+                "CELERY DB SESSION FACTORY REUSED: conversation_id=%s",
                 conversation_id,
             )
