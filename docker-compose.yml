@@ -109,6 +109,7 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-http://ollama:11434/v1}
       - LLM_API_KEY=${LLM_API_KEY:-ollama}
       - LLM_MODEL=${LLM_MODEL:-llama3.1}
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-4}
     depends_on:
       redis:
         condition: service_started
