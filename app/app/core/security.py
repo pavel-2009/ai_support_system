@@ -52,12 +52,22 @@ def _verify_password_sync(plain_password: str, hashed_password: str) -> bool:
     )
 
 
-async def hash_password(password: str) -> str:
+def hash_password(password: str) -> str:
+    """Хеширование пароля."""
+    return _hash_password_sync(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Проверка пароля с хешем."""
+    return _verify_password_sync(plain_password, hashed_password)
+
+
+async def hash_password_async(password: str) -> str:
     """Хешировать пароль вне event loop."""
     return await anyio.to_thread.run_sync(_hash_password_sync, password)
 
 
-async def verify_password(plain_password: str, hashed_password: str) -> bool:
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
     """Проверить пароль вне event loop."""
     return await anyio.to_thread.run_sync(
         _verify_password_sync,
