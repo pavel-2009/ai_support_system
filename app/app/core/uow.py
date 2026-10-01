@@ -3,11 +3,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.event_bus import event_bus
-from app.core.logging import get_logger, log_database_message_error
+from app.core.logging import get_logger
 from app.domain.events import DomainEvent
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.conversation_state_machine import ConversationStateMachine
@@ -46,41 +45,17 @@ class UnitOfWork:
                     id(self.session),
                     exc,
                 )
-                if self.session.info.get("message_creation_started") and isinstance(
-                    exc, SQLAlchemyError
-                ):
-                    log_database_message_error(
-                        "unit_of_work.rollback",
-                        exc,
-                        session_id=id(self.session),
-                    )
                 await self.session.rollback()
             else:
                 await self.session.commit()
                 await self._publish_events()
         except Exception as exc:
             logger.exception("DB TRANSACTION FINALIZATION FAILED: session_id=%s", id(self.session))
-            if self.session.info.get("message_creation_started") and isinstance(
-                exc, SQLAlchemyError
-            ):
-                log_database_message_error(
-                    "unit_of_work.finalize",
-                    exc,
-                    session_id=id(self.session),
-                )
             raise
         finally:
             try:
                 await self.session.close()
-            except Exception as exc:
-                if self.session.info.get("message_creation_started") and isinstance(
-                    exc, SQLAlchemyError
-                ):
-                    log_database_message_error(
-                        "unit_of_work.close_session",
-                        exc,
-                        session_id=id(self.session),
-                    )
+            except Exception:
                 raise
 
     async def _publish_events(self) -> None:
