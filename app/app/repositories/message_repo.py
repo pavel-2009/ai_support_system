@@ -31,7 +31,9 @@ class MessageRepository:
         """Создать новое сообщение."""
         conversation = (
             await self.session.execute(
-                select(Conversation).where(Conversation.id == conversation_id)
+                select(Conversation)
+                .where(Conversation.id == conversation_id)
+                .with_for_update()
             )
         ).scalar_one_or_none()
         if conversation is None:
