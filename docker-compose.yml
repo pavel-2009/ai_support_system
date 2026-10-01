@@ -98,7 +98,7 @@ services:
         condition: service_completed_successfully
   celery:
     build: ./app
-    command: ["/bin/sh", "-c", "mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && rm -f \"$PROMETHEUS_MULTIPROC_DIR\"/* && exec celery -A app.celery.celery_app:celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-4}"]
+    command: ["/bin/sh", "-c", "mkdir -p /tmp/prometheus-multiproc && rm -f /tmp/prometheus-multiproc/* && exec celery -A app.celery.celery_app:celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-4}"]
     volumes:
       - ./app:/app
       - ./logs/celery:/app/logs
