@@ -34,7 +34,7 @@ def initialize_worker_database() -> async_sessionmaker[AsyncSession]:
 def get_worker_session_factory() -> async_sessionmaker[AsyncSession]:
     """Return the worker-local session factory after worker initialization."""
     if _worker_session_factory is None:
-        raise RuntimeError("Celery worker database is not initialized")
+        return initialize_worker_database()
     return _worker_session_factory
 
 
