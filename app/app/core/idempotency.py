@@ -1,9 +1,17 @@
 """Простая работа с Idempotency-Key."""
 
 import json
+from enum import Enum
 
 from redis.asyncio import Redis
 
+
+class IdempotencyStatus(str, Enum):
+    """Статусы Idempotency-Key."""
+
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class IdempotencyKey:
     """Хранит состояние запроса в Redis."""
@@ -22,7 +30,7 @@ class IdempotencyKey:
 
     async def reserve(self, key: str, fingerprint: str, ttl: int = 300) -> bool:
         """Try to reserve the key for processing. Returns True if the key was reserved, False if it already exists."""
-        value = json.dumps({"fingerprint": fingerprint, "status": "processing"})
+        value = json.dumps({"fingerprint": fingerprint, "status": IdempotencyStatus.PROCESSING.value})
         return bool(await self.redis.set(key, value, ex=ttl, nx=True))
 
     async def complete(
@@ -36,10 +44,15 @@ class IdempotencyKey:
         value = json.dumps(
             {
                 "fingerprint": fingerprint,
-                "status": "completed",
+                "status": IdempotencyStatus.COMPLETED.value,
                 "response": response,
             }
         )
+        await self.redis.setex(key, ttl, value)
+
+    async def fail(self, key: str, fingerprint: str, ttl: int = 300) -> None:
+        """Set the key as failed with the fingerprint. The key will expire after ttl seconds."""
+        value = json.dumps({"fingerprint": fingerprint, "status": IdempotencyStatus.FAILED.value})
         await self.redis.setex(key, ttl, value)
 
     async def delete(self, key: str) -> None:
