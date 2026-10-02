@@ -122,6 +122,8 @@ async def send_message(
             )
     except Exception:
         if idempotency:
+            await idempotency.fail(storage_key, fingerprint)
+            logger.exception("Failed to send message for conversation %s", conversation.id)
             await idempotency.delete(storage_key)
         raise
 
