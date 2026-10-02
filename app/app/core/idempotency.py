@@ -11,7 +11,6 @@ class IdempotencyStatus(str, Enum):
 
     PROCESSING = "processing"
     COMPLETED = "completed"
-    FAILED = "failed"
 
 class IdempotencyKey:
     """Хранит состояние запроса в Redis."""
@@ -48,11 +47,6 @@ class IdempotencyKey:
                 "response": response,
             }
         )
-        await self.redis.setex(key, ttl, value)
-
-    async def fail(self, key: str, fingerprint: str, ttl: int = 300) -> None:
-        """Set the key as failed with the fingerprint. The key will expire after ttl seconds."""
-        value = json.dumps({"fingerprint": fingerprint, "status": IdempotencyStatus.FAILED.value})
         await self.redis.setex(key, ttl, value)
 
     async def delete(self, key: str) -> None:
