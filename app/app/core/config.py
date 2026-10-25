@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     LLM_RETRY_ATTEMPTS: int = 5
     LLM_RETRY_WAIT_MULTIPLIER: float = 1.5
     LLM_RETRY_WAIT_MAX: int = 4
+    LLM_TASK_MAX_RETRIES: int = 3
+    LLM_TASK_RETRY_WAIT_MULTIPLIER: int = 30
+    LLM_TASK_RETRY_WAIT_MAX: int = 300
 
     # === Redis ===
     REDIS_URL: str = "redis://redis:6379/0"

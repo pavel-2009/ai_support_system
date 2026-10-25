@@ -283,7 +283,9 @@ Important variables include:
 
 ### LLM
 
-`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`, `LLM_TEMPERATURE`, `LLM_AI_CONFIDENCE_THRESHOLD`, `LLM_ESCALATION_CONFIDENCE_THRESHOLD`, `LLM_TOKEN_LIMIT`, `LLM_RETRY_ATTEMPTS`, `LLM_RETRY_WAIT_MULTIPLIER`, `LLM_RETRY_WAIT_MAX`.
+`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`, `LLM_TEMPERATURE`, `LLM_AI_CONFIDENCE_THRESHOLD`, `LLM_ESCALATION_CONFIDENCE_THRESHOLD`, `LLM_TOKEN_LIMIT`, `LLM_RETRY_ATTEMPTS`, `LLM_RETRY_WAIT_MULTIPLIER`, `LLM_RETRY_WAIT_MAX`, `LLM_TASK_MAX_RETRIES`, `LLM_TASK_RETRY_WAIT_MULTIPLIER`, `LLM_TASK_RETRY_WAIT_MAX`.
+
+LLM API calls are retried for connection errors, HTTP 408/409/429, and server-side HTTP errors. Each individual attempt passes through the circuit breaker; after its failure threshold is reached, further attempts fail fast with `CircuitOpen`. The Celery task then retries transient API/network failures and open-circuit errors up to `LLM_TASK_MAX_RETRIES`, using capped exponential delays starting at `LLM_TASK_RETRY_WAIT_MULTIPLIER` seconds. Invalid LLM response content and non-transient API errors are not retried by Celery.
 
 ### Redis / Celery
 

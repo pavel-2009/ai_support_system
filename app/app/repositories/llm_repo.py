@@ -8,13 +8,14 @@ from openai import APIError, AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
-    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+    retry, stop_after_attempt, wait_exponential, retry_if_exception,
 )
 
 from app.core.config import settings
 from app.core.circut_breaker import CircuitOpen, circuit, Circuit
 from app.core.exceptions import LLMResponseFailed
 from app.core.logging import get_logger
+from app.core.llm_retry import is_retryable_llm_api_error
 from app.core.telemetry import get_tracer
 from app.models.message import Message
 from app.schemas.llm import LLMResponse
@@ -58,7 +59,7 @@ class LLMRepository:
             validated = await self._request_and_validate(messages)
         except CircuitOpen:
             raise
-        except (APIError, LLMResponseFailed) as exc:
+        except LLMResponseFailed as exc:
             raise LLMResponseFailed(f"LLM request failed: {exc}") from exc
 
         logger.debug(
@@ -69,13 +70,13 @@ class LLMRepository:
         )
         return validated
 
-    @circuit(llm_circuit, counts_as_failure=(APIError, LLMResponseFailed))
     @retry(
         stop=stop_after_attempt(settings.LLM_RETRY_ATTEMPTS),
         wait=wait_exponential(multiplier=settings.LLM_RETRY_WAIT_MULTIPLIER, max=settings.LLM_RETRY_WAIT_MAX),
-        retry=retry_if_exception_type(APIError),
+        retry=retry_if_exception(is_retryable_llm_api_error),
         reraise=True,
     )
+    @circuit(llm_circuit, counts_as_failure=(APIError, LLMResponseFailed))
     async def _request_and_validate(
         self,
         messages: list[dict[str, str]],

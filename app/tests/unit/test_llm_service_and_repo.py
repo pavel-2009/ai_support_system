@@ -6,12 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core.circut_breaker import Circuit, State, circuit
+from app.core.circut_breaker import Circuit, CircuitOpen, State, circuit
 from app.core.config import settings
 from app.core.exceptions import LLMResponseFailed
+from app.core.llm_retry import is_retryable_llm_api_error
 from app.repositories.llm_repo import LLMRepository
 from app.schemas.llm import LLMResponse
 from app.services.llm_service import LLMService
+from openai import APIConnectionError, APIError, APIStatusError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_none
 
 
 class _FakeScalars:
@@ -92,6 +95,63 @@ class TestCircuitBreaker:
 
         assert circ.state == State.OPEN
 
+    @pytest.mark.asyncio
+    async def test_circuit_counts_each_retry_attempt(self):
+        circ = Circuit(failure_threshold=2, recovery_timeout=1, success_threshold=1)
+        attempts = 0
+
+        @retry(
+            stop=stop_after_attempt(5),
+            wait=wait_none(),
+            retry=retry_if_exception_type(RuntimeError),
+            reraise=True,
+        )
+        @circuit(circ)
+        async def fail():
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("temporary failure")
+
+        with pytest.raises(CircuitOpen):
+            await fail()
+
+        assert attempts == 2
+        assert circ.state is State.OPEN
+
+
+class TestLLMRetryClassification:
+    def test_retryable_api_errors_are_classified(self):
+        connection_error = APIConnectionError(
+            message="connection failed",
+            request=MagicMock(),
+        )
+        rate_limit_error = APIStatusError(
+            "rate limited",
+            response=MagicMock(status_code=429, request=MagicMock()),
+            body=None,
+        )
+        server_error = APIStatusError(
+            "server error",
+            response=MagicMock(status_code=503, request=MagicMock()),
+            body=None,
+        )
+        authentication_error = APIStatusError(
+            "unauthorized",
+            response=MagicMock(status_code=401, request=MagicMock()),
+            body=None,
+        )
+        generic_api_error = APIError(
+            "invalid request",
+            request=MagicMock(),
+            body=None,
+        )
+
+        assert is_retryable_llm_api_error(connection_error) is True
+        assert is_retryable_llm_api_error(rate_limit_error) is True
+        assert is_retryable_llm_api_error(server_error) is True
+        assert is_retryable_llm_api_error(authentication_error) is False
+        assert is_retryable_llm_api_error(generic_api_error) is False
+
 
 class TestLLMRepositoryHelpers:
     @patch("app.repositories.llm_repo.AsyncOpenAI")
@@ -113,6 +173,21 @@ class TestLLMRepositoryHelpers:
         assert "topic" in prompt
         assert "Do not return a JSON Schema" in prompt
         assert "Assistant:" not in prompt
+
+    @pytest.mark.asyncio
+    @patch("app.repositories.llm_repo.AsyncOpenAI")
+    async def test_generate_response_preserves_api_error_for_task_retry(self, _openai_mock):
+        repo = LLMRepository(api_key="x", model="test-model")
+        error = APIConnectionError(message="connection failed", request=MagicMock())
+        request = AsyncMock(side_effect=error)
+
+        with patch.object(repo, "_request_and_validate", new=request):
+            with pytest.raises(APIConnectionError) as raised:
+                await repo._generate_response(
+                    messages=[{"role": "system", "content": "prompt"}],
+                )
+
+        assert raised.value is error
 
     @patch("app.repositories.llm_repo.AsyncOpenAI")
     def test_generate_messages_history_uses_correct_roles_and_order(self, _openai_mock):

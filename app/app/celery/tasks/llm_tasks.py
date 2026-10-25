@@ -15,6 +15,7 @@ from app.core.redis import create_redis_client
 from app.core.correlation import set_correlation_id
 from app.core.circut_breaker import CircuitOpen
 from app.core.logging import get_logger
+from app.core.llm_retry import is_retryable_llm_api_error
 from app.core.metrics import (
     celery_task_duration_seconds,
     celery_tasks_total,
@@ -33,6 +34,10 @@ from app.services.message_service import MessageService
 logger = get_logger(__name__)
 tracer = get_tracer("app.celery")
 RETRYABLE_TASK_ERRORS = (CircuitOpen, ConnectionError, TimeoutError)
+
+
+def _is_retryable_task_error(error: BaseException) -> bool:
+    return isinstance(error, RETRYABLE_TASK_ERRORS) or is_retryable_llm_api_error(error)
 
 
 @worker_ready.connect
@@ -60,7 +65,7 @@ def shutdown_worker_database_process(pid=None, **kwargs) -> None:
         multiprocess.mark_process_dead(pid)
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, max_retries=settings.LLM_TASK_MAX_RETRIES)
 def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> str:
     """Обработать LLM-запрос с повтором только при временных ошибках."""
     set_correlation_id(correlation_id)
@@ -79,21 +84,24 @@ def process_llm_task(task, conversation_id: int, correlation_id: str = "-") -> s
             logger.info("celery_task_started", conversation_id=conversation_id, task_id=task.request.id)
             try:
                 asyncio.run(_process_llm_task_async(conversation_id))
-            except RETRYABLE_TASK_ERRORS as exc:
-                outcome = "retry"
+            except Exception as exc:
                 span.record_exception(exc)
                 span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                if not _is_retryable_task_error(exc):
+                    logger.exception("celery_task_failed", conversation_id=conversation_id)
+                    raise
+
+                outcome = "retry"
+                countdown = min(
+                    settings.LLM_TASK_RETRY_WAIT_MULTIPLIER * 2 ** task.request.retries,
+                    settings.LLM_TASK_RETRY_WAIT_MAX,
+                )
                 logger.warning(
                     "CELERY LLM RETRY: conversation_id=%s error=%s",
                     conversation_id,
                     type(exc).__name__,
                 )
-                raise task.retry(exc=exc)
-            except Exception as exc:
-                span.record_exception(exc)
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
-                logger.exception("celery_task_failed", conversation_id=conversation_id)
-                raise
+                raise task.retry(exc=exc, countdown=countdown)
 
             outcome = "success"
             logger.info("celery_task_succeeded", conversation_id=conversation_id)

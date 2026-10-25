@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, WebSocketDisconnect
+from openai import APIConnectionError, APIStatusError
 
 from app.core.websocket import OperatorConnectionManager
 from app.models.user import UserRole
@@ -248,12 +249,37 @@ class TestLLMTasks:
         conversation_service.escalate.assert_not_awaited()
 
     def test_process_llm_task_retries_on_transient_exception(self):
-        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=ConnectionError("network")):
+        error = ConnectionError("network")
+        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=error):
             from app.celery.tasks.llm_tasks import process_llm_task
             with patch.object(process_llm_task, "retry", side_effect=RuntimeError("retry called")) as retry_mock:
                 with pytest.raises(RuntimeError, match="retry called"):
                     process_llm_task.run(1)
-        retry_mock.assert_called_once()
+        retry_mock.assert_called_once_with(exc=error, countdown=30)
+
+    def test_process_llm_task_retries_on_transient_llm_api_error(self):
+        error = APIConnectionError(message="connection failed", request=MagicMock())
+        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=error):
+            from app.celery.tasks.llm_tasks import process_llm_task
+            with patch.object(process_llm_task, "retry", side_effect=RuntimeError("retry called")) as retry_mock:
+                with pytest.raises(RuntimeError, match="retry called"):
+                    process_llm_task.run(1)
+
+        retry_mock.assert_called_once_with(exc=error, countdown=30)
+
+    def test_process_llm_task_does_not_retry_non_transient_llm_api_error(self):
+        error = APIStatusError(
+            "unauthorized",
+            response=MagicMock(status_code=401, request=MagicMock()),
+            body=None,
+        )
+        with patch("app.celery.tasks.llm_tasks.asyncio.run", side_effect=error):
+            from app.celery.tasks.llm_tasks import process_llm_task
+            with patch.object(process_llm_task, "retry") as retry_mock:
+                with pytest.raises(APIStatusError):
+                    process_llm_task.run(1)
+
+        retry_mock.assert_not_called()
 
     def test_process_llm_task_returns_ok(self):
         with patch("app.celery.tasks.llm_tasks.asyncio.run", return_value=None) as run_mock:
